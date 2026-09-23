@@ -9,6 +9,7 @@
     lake: "all",
     view: "cards",
     openGroups: new Set(),
+    treeOpen: new Set(),
   };
 
   const els = {
@@ -32,6 +33,7 @@
     completionText: document.getElementById("completionText"),
     mapCaptionTitle: document.getElementById("mapCaptionTitle"),
     mapCaptionMeta: document.getElementById("mapCaptionMeta"),
+    mapZoomLevel: document.getElementById("mapZoomLevel"),
     dataFreshness: document.getElementById("dataFreshness"),
     drawer: document.getElementById("detailDrawer"),
     drawerScrim: document.getElementById("drawerScrim"),
@@ -43,6 +45,7 @@
   };
 
   const domainByName = new Map(dataset.domains.map((domain) => [domain.name, domain]));
+  const tableById = new Map(dataset.tables.map((table) => [String(table.id), table]));
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -60,37 +63,104 @@
   }
 
   function statusLabel(value, type) {
-    if (value === "是") return type === "lake" ? "已入湖" : "已线上";
-    if (value === "否") return type === "lake" ? "未入湖" : "未线上";
+    if (value === "是") return type === "lake" ? "已入湖" : "已上线";
+    if (value === "否") return type === "lake" ? "未入湖" : "未上线";
     return "待确认";
   }
 
-  function domainIcon(index) {
-    const paths = [
-      '<path d="M4 17V7l8-4 8 4v10l-8 4zM4 7l8 4 8-4M12 11v10"/>',
-      '<path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h4"/>',
-      '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.2 4 5 4 8s-1.5 5.8-4 8c-2.5-2.2-4-5-4-8s1.5-5.8 4-8"/>',
-      '<path d="M4 19h16M6 17V9h4v8M14 17V5h4v12"/>',
-    ];
-    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[index % paths.length]}</svg>`;
+  function groupOrdered(items, keyOf) {
+    const groups = new Map();
+    items.forEach((item) => {
+      const key = keyOf(item) || "待分类";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+    return [...groups.entries()];
+  }
+
+  const hierarchy = dataset.domains.map((domain) => {
+    const domainTables = dataset.tables.filter((table) => table.domain === domain.name);
+    return {
+      ...domain,
+      topics: groupOrdered(domainTables, (table) => table.topic).map(([topic, topicTables]) => ({
+        name: topic,
+        count: topicTables.length,
+        objects: groupOrdered(topicTables, (table) => table.businessObject).map(([object, objectTables]) => ({
+          name: object,
+          count: objectTables.length,
+          tables: objectTables,
+        })),
+      })),
+    };
+  });
+
+  function caretSvg() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>';
+  }
+
+  function tableSvg() {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg>';
   }
 
   function renderNavigation() {
+    const nav = els.domainNavList.closest(".domain-nav");
+    const savedScroll = nav ? nav.scrollTop : 0;
     els.allDomainCount.textContent = dataset.tables.length;
-    els.domainNavList.innerHTML = dataset.domains.map((domain, index) => `
-      <button class="domain-nav-item ${domain.count === 0 ? "is-empty" : ""}" type="button" data-domain="${escapeHtml(domain.name)}">
-        <span class="nav-icon" style="color:${domain.color}">${domainIcon(index)}</span>
-        <span class="nav-label" title="${escapeHtml(domain.name)}">${escapeHtml(domain.name)}</span>
-        <span class="nav-count">${domain.count}</span>
-      </button>
-    `).join("");
+    const allButton = document.querySelector('.domain-nav-item[data-domain="all"]');
+    if (allButton) allButton.classList.toggle("is-active", state.domain === "all");
 
-    document.querySelectorAll(".domain-nav-item").forEach((button) => {
-      button.addEventListener("click", () => {
-        selectDomain(button.dataset.domain);
-        closeSidebar();
-      });
-    });
+    els.domainNavList.innerHTML = hierarchy.map((domain) => {
+      const domainKey = `d::${domain.name}`;
+      const domainOpen = state.treeOpen.has(domainKey);
+      const topics = domain.topics.map((topic) => {
+        const topicKey = `t::${domain.name}::${topic.name}`;
+        const topicOpen = state.treeOpen.has(topicKey);
+        const objects = topic.objects.map((object) => {
+          const objectKey = `o::${domain.name}::${topic.name}::${object.name}`;
+          const objectOpen = state.treeOpen.has(objectKey);
+          const leaves = object.tables.map((table) => `
+            <button class="tree-leaf" type="button" data-tree-table="${escapeHtml(table.id)}" title="${escapeHtml(table.name)}">
+              ${tableSvg()}<span>${escapeHtml(table.name)}</span>
+            </button>
+          `).join("");
+          return `
+            <div class="tree-object">
+              <button class="tree-row tree-l3" type="button" data-tree-toggle="${escapeHtml(objectKey)}" aria-expanded="${objectOpen}">
+                <span class="tree-caret">${caretSvg()}</span>
+                <span class="tree-name" title="${escapeHtml(object.name)}">${escapeHtml(object.name)}</span>
+                <span class="tree-count">${object.count}</span>
+              </button>
+              <div class="tree-children ${objectOpen ? "is-open" : ""}">${leaves}</div>
+            </div>
+          `;
+        }).join("");
+        return `
+          <div class="tree-topic">
+            <button class="tree-row tree-l2" type="button" data-tree-toggle="${escapeHtml(topicKey)}" aria-expanded="${topicOpen}">
+              <span class="tree-caret">${caretSvg()}</span>
+              <span class="tree-name" title="${escapeHtml(topic.name)}">${escapeHtml(topic.name)}</span>
+              <span class="tree-count">${topic.count}</span>
+            </button>
+            <div class="tree-children ${topicOpen ? "is-open" : ""}">${objects}</div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="tree-domain ${domain.count === 0 ? "is-empty" : ""}">
+          <button class="tree-row tree-l1 ${state.domain === domain.name ? "is-active" : ""}" type="button"
+            data-tree-toggle="${escapeHtml(domainKey)}" data-domain-focus="${escapeHtml(domain.name)}" aria-expanded="${domainOpen}">
+            <span class="tree-caret">${caretSvg()}</span>
+            <span class="domain-dot" style="--dot:${domain.color}"></span>
+            <span class="tree-name" title="${escapeHtml(domain.name)}">${escapeHtml(domain.name)}</span>
+            <span class="tree-count">${domain.count}</span>
+          </button>
+          <div class="tree-children ${domainOpen ? "is-open" : ""}">${topics}</div>
+        </div>
+      `;
+    }).join("");
+
+    if (nav) requestAnimationFrame(() => { nav.scrollTop = savedScroll; });
   }
 
   function renderMetrics() {
@@ -109,44 +179,30 @@
     els.completionRing.style.setProperty("--progress", `${lakePercent * 3.6}deg`);
     els.completionRing.querySelector("span").textContent = `${lakePercent}%`;
     els.completionText.textContent = `${lake} / ${total} 张表`;
-    if (dataset.meta?.sourceDate) {
-      els.dataFreshness.textContent = `目录更新时间：${dataset.meta.sourceDate}`;
+    if (dataset.meta?.sourceDate) els.dataFreshness.textContent = `目录更新时间：${dataset.meta.sourceDate}`;
+  }
+
+  function tableMatches(table, includeDomain = true) {
+    if (includeDomain && state.domain !== "all" && table.domain !== state.domain) return false;
+    if (state.online !== "all") {
+      if (state.online === "unknown" ? Boolean(table.online) : table.online !== state.online) return false;
     }
+    if (state.lake !== "all") {
+      if (state.lake === "unknown" ? Boolean(table.inLake) : table.inLake !== state.lake) return false;
+    }
+    const query = state.query.trim().toLowerCase();
+    if (!query) return true;
+    return [table.name, table.englishName, table.domain, table.topic, table.businessObject, table.owner]
+      .join(" ").toLowerCase().includes(query);
   }
 
   function filteredTables() {
-    const query = state.query.trim().toLowerCase();
-    return dataset.tables.filter((table) => {
-      if (state.domain !== "all" && table.domain !== state.domain) return false;
-      if (state.online !== "all") {
-        if (state.online === "unknown" ? Boolean(table.online) : table.online !== state.online) return false;
-      }
-      if (state.lake !== "all") {
-        if (state.lake === "unknown" ? Boolean(table.inLake) : table.inLake !== state.lake) return false;
-      }
-      if (!query) return true;
-      return [table.name, table.englishName, table.domain, table.topic, table.businessObject, table.owner]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    });
-  }
-
-  function groupTables(tables) {
-    const groups = new Map();
-    tables.forEach((table) => {
-      const key = `${table.domain}|||${table.topic}`;
-      if (!groups.has(key)) groups.set(key, { domain: table.domain, topic: table.topic, tables: [] });
-      groups.get(key).tables.push(table);
-    });
-    return [...groups.values()];
+    return dataset.tables.filter((table) => tableMatches(table, true));
   }
 
   function tableCard(table) {
     const domain = domainByName.get(table.domain) || { color: "#5a5feb" };
-    const english = table.englishName
-      ? escapeHtml(table.englishName)
-      : '<span class="is-empty">英文表名待完善</span>';
+    const english = table.englishName ? escapeHtml(table.englishName) : "英文表名待完善";
     return `
       <button class="table-card" type="button" data-table-id="${table.id}" style="--card-color:${domain.color}">
         <span class="card-top">
@@ -167,13 +223,15 @@
 
   function renderCatalog() {
     const tables = filteredTables();
-    const groups = groupTables(tables);
+    const groups = groupOrdered(tables, (table) => `${table.domain}|||${table.topic}`).map(([key, groupTables]) => {
+      const [domain, topic] = key.split("|||");
+      return { domain, topic, tables: groupTables };
+    });
     const selectedDomain = state.domain === "all" ? null : domainByName.get(state.domain);
 
     els.catalogTitle.textContent = selectedDomain ? selectedDomain.name : "全部数据表";
     els.resultSummary.textContent = `共找到 ${tables.length} 张数据表，分布在 ${new Set(tables.map((item) => item.topic)).size} 个二级主题域`;
     els.catalogGroups.classList.toggle("is-compact", state.view === "compact");
-
     els.catalogGroups.innerHTML = groups.map((group) => {
       const domain = domainByName.get(group.domain) || { color: "#5a5feb" };
       const groupKey = `${group.domain}|||${group.topic}`;
@@ -181,14 +239,9 @@
       return `
         <section class="domain-section ${collapsed ? "is-collapsed" : ""}" style="--group-color:${domain.color}">
           <div class="group-header">
-            <div class="group-title">
-              <i></i>
-              <h3>${escapeHtml(group.topic)}</h3>
-              <span>${escapeHtml(group.domain)} · ${group.tables.length} 张</span>
-            </div>
+            <div class="group-title"><i></i><h3>${escapeHtml(group.topic)}</h3><span>${escapeHtml(group.domain)} · ${group.tables.length} 张</span></div>
             <button type="button" class="collapse-group" data-group="${escapeHtml(groupKey)}">
-              ${collapsed ? "展开" : "收起"}
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              ${collapsed ? "展开" : "收起"}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
             </button>
           </div>
           <div class="table-grid">${group.tables.map(tableCard).join("")}</div>
@@ -198,22 +251,14 @@
 
     els.emptyState.hidden = tables.length !== 0;
     els.catalogGroups.hidden = tables.length === 0;
-    bindCatalogEvents();
+    document.querySelectorAll("[data-table-id]").forEach((button) => button.addEventListener("click", () => openDrawer(button.dataset.tableId)));
+    document.querySelectorAll("[data-group]").forEach((button) => button.addEventListener("click", () => {
+      const key = button.dataset.group;
+      state.openGroups.has(key) ? state.openGroups.delete(key) : state.openGroups.add(key);
+      renderCatalog();
+    }));
     renderActiveFilters();
     updateMapCaption(tables);
-  }
-
-  function bindCatalogEvents() {
-    document.querySelectorAll("[data-table-id]").forEach((button) => {
-      button.addEventListener("click", () => openDrawer(button.dataset.tableId));
-    });
-    document.querySelectorAll("[data-group]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const key = button.dataset.group;
-        state.openGroups.has(key) ? state.openGroups.delete(key) : state.openGroups.add(key);
-        renderCatalog();
-      });
-    });
   }
 
   function renderActiveFilters() {
@@ -222,7 +267,6 @@
     if (state.query) filters.push({ key: "query", label: `搜索：${state.query}` });
     if (state.online !== "all") filters.push({ key: "online", label: `线上：${statusLabel(state.online === "unknown" ? "" : state.online, "online")}` });
     if (state.lake !== "all") filters.push({ key: "lake", label: `入湖：${statusLabel(state.lake === "unknown" ? "" : state.lake, "lake")}` });
-
     els.activeFilters.hidden = filters.length === 0;
     els.activeFilters.innerHTML = filters.map((filter) => `
       <span class="filter-chip">${escapeHtml(filter.label)}
@@ -231,18 +275,30 @@
         </button>
       </span>
     `).join("");
-    document.querySelectorAll("[data-clear-filter]").forEach((button) => {
-      button.addEventListener("click", () => clearFilter(button.dataset.clearFilter));
-    });
+    document.querySelectorAll("[data-clear-filter]").forEach((button) => button.addEventListener("click", () => clearFilter(button.dataset.clearFilter)));
+  }
+
+  function updateMapCaption(tables) {
+    els.mapCaptionTitle.textContent = state.domain === "all" ? "全部主题域" : state.domain;
+    els.mapCaptionMeta.textContent = `${tables.length} 张表 · ${new Set(tables.map((item) => item.topic)).size} 个二级主题域`;
+  }
+
+  function selectDomain(domain, options = {}) {
+    const nextDomain = domain || "all";
+    state.domain = nextDomain;
+    if (nextDomain !== "all" && options.expandTree !== false) state.treeOpen.add(`d::${nextDomain}`);
+    renderNavigation();
+    renderCatalog();
+    if (options.focus !== false) dataMap.focusDomain(nextDomain);
+    if (options.closeMobile !== false) closeSidebar();
   }
 
   function clearFilter(key) {
-    if (key === "domain") selectDomain("all");
+    if (key === "domain") return selectDomain("all");
     if (key === "query") { state.query = ""; els.searchInput.value = ""; }
     if (key === "online") { state.online = "all"; els.onlineFilter.value = "all"; }
     if (key === "lake") { state.lake = "all"; els.lakeFilter.value = "all"; }
     renderCatalog();
-    dataMap.draw();
   }
 
   function clearAllFilters() {
@@ -255,24 +311,10 @@
     selectDomain("all");
   }
 
-  function selectDomain(domain) {
-    state.domain = domain || "all";
-    document.querySelectorAll(".domain-nav-item").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.domain === state.domain);
-    });
-    renderCatalog();
-    dataMap.draw();
-  }
-
-  function updateMapCaption(tables) {
-    const title = state.domain === "all" ? "全部主题域" : state.domain;
-    els.mapCaptionTitle.textContent = title;
-    els.mapCaptionMeta.textContent = `${tables.length} 张表 · ${new Set(tables.map((item) => item.topic)).size} 个二级主题域`;
-  }
-
   function openDrawer(id) {
-    const table = dataset.tables.find((item) => String(item.id) === String(id));
+    const table = tableById.get(String(id));
     if (!table) return;
+    dataMap.selectTable(table.id);
     const domain = domainByName.get(table.domain) || { color: "#5a5feb" };
     els.drawer.style.setProperty("--drawer-color", domain.color);
     els.drawerDomain.textContent = table.domain;
@@ -286,10 +328,8 @@
         <span class="status-chip ${statusClass(table.inLake)}">${statusLabel(table.inLake, "lake")}</span>
       </div>
       <div class="detail-path">
-        <span>${escapeHtml(table.domain)}</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-        <span>${escapeHtml(table.topic)}</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+        <span>${escapeHtml(table.domain)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+        <span>${escapeHtml(table.topic)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
         <span>${escapeHtml(table.businessObject || "待完善")}</span>
       </div>
       <div class="detail-grid">
@@ -298,10 +338,7 @@
         <div class="detail-item"><span>目录序号</span><strong>#${escapeHtml(table.sourceRow)}</strong></div>
         <div class="detail-item"><span>业务对象</span><strong>${escapeHtml(table.businessObject || "待完善")}</strong></div>
       </div>
-      <div class="detail-note">
-        <span>说明</span>
-        <p>${escapeHtml(table.description || "暂无补充说明。")}</p>
-      </div>
+      <div class="detail-note"><span>说明</span><p>${escapeHtml(table.description || "暂无补充说明。")}</p></div>
     `;
     els.drawer.classList.add("is-open");
     els.drawerScrim.classList.add("is-open");
@@ -315,188 +352,454 @@
     els.drawerScrim.classList.remove("is-open");
     els.drawer.setAttribute("aria-hidden", "true");
     document.body.style.overflow = "";
+    dataMap.selectTable(null);
   }
 
-  function openSidebar() {
-    els.sidebar.classList.add("is-open");
-    els.sidebarScrim.classList.add("is-open");
-  }
-
-  function closeSidebar() {
-    els.sidebar.classList.remove("is-open");
-    els.sidebarScrim.classList.remove("is-open");
-  }
-
+  function openSidebar() { els.sidebar.classList.add("is-open"); els.sidebarScrim.classList.add("is-open"); }
+  function closeSidebar() { els.sidebar.classList.remove("is-open"); els.sidebarScrim.classList.remove("is-open"); }
   function closeGuide() { els.guideModal.hidden = true; }
 
   const dataMap = (() => {
     const canvas = document.getElementById("dataMap");
     const stage = document.getElementById("mapStage");
     const tooltip = document.getElementById("mapTooltip");
-    const context = canvas.getContext("2d");
-    let points = [];
-    let hoverPoint = null;
+    const ctx = canvas.getContext("2d");
+    const domainHubs = [];
+    const topicHubs = [];
+    const objectHubs = [];
+    const nodes = [];
+    const edges = [];
+    const nodeById = new Map();
+    const domainHubByName = new Map();
     let width = 0;
     let height = 0;
     let dpr = 1;
+    let baseScale = 1;
+    let selectedId = null;
+    let hoveredNode = null;
+    let hoveredDomain = null;
+    let dragging = false;
+    let moved = false;
+    let pointerStart = null;
+    let lastPointer = { x: 0, y: 0 };
+    let cameraTween = null;
+    const camera = { zoom: 1, panX: 0, panY: 0 };
 
-    function hash(seed) {
-      let value = Math.sin(seed * 12.9898) * 43758.5453;
-      return value - Math.floor(value);
+    function hash(value) {
+      let result = 2166136261;
+      const text = String(value);
+      for (let index = 0; index < text.length; index += 1) {
+        result ^= text.charCodeAt(index);
+        result = Math.imul(result, 16777619);
+      }
+      return Math.abs(result >>> 0);
+    }
+
+    function unit(value, salt) { return (hash(`${value}:${salt}`) % 10000) / 10000; }
+
+    function buildLayout() {
+      const active = hierarchy.filter((domain) => domain.count > 0);
+      active.forEach((domain, domainIndex) => {
+        const angle = -Math.PI / 2 + (domainIndex / active.length) * Math.PI * 2;
+        const ring = domainIndex % 2 === 0 ? 1 : .86;
+        const domainHub = {
+          kind: "domain", domain: domain.name, label: domain.name, color: domain.color,
+          x: Math.cos(angle) * 500 * ring, y: Math.sin(angle) * 320 * ring,
+          tableIds: domain.topics.flatMap((topic) => topic.objects.flatMap((object) => object.tables.map((table) => String(table.id)))),
+        };
+        domainHubs.push(domainHub);
+        domainHubByName.set(domain.name, domainHub);
+
+        domain.topics.forEach((topic, topicIndex) => {
+          const topicAngle = -Math.PI / 2 + (topicIndex / Math.max(domain.topics.length, 1)) * Math.PI * 2;
+          const topicRing = 62 + Math.min(78, domain.topics.length * 7);
+          const topicHub = {
+            kind: "topic", domain: domain.name, label: topic.name, color: domain.color,
+            x: domainHub.x + Math.cos(topicAngle) * topicRing,
+            y: domainHub.y + Math.sin(topicAngle) * topicRing * .72,
+            tableIds: topic.objects.flatMap((object) => object.tables.map((table) => String(table.id))),
+          };
+          topicHubs.push(topicHub);
+          edges.push({ from: domainHub, to: topicHub, domain: domain.name, depth: 1, tableIds: topicHub.tableIds });
+
+          topic.objects.forEach((object, objectIndex) => {
+            const objectAngle = topicAngle + (objectIndex / Math.max(topic.objects.length, 1)) * Math.PI * 2;
+            const objectRing = 22 + Math.min(34, topic.objects.length * 4.2);
+            const objectHub = {
+              kind: "object", domain: domain.name, label: object.name, color: domain.color,
+              x: topicHub.x + Math.cos(objectAngle) * objectRing,
+              y: topicHub.y + Math.sin(objectAngle) * objectRing * .7,
+              tableIds: object.tables.map((table) => String(table.id)),
+            };
+            objectHubs.push(objectHub);
+            edges.push({ from: topicHub, to: objectHub, domain: domain.name, depth: 2, tableIds: objectHub.tableIds });
+
+            object.tables.forEach((table, tableIndex) => {
+              const nodeAngle = unit(table.id, "angle") * Math.PI * 2 + tableIndex * .8;
+              const nodeRing = 11 + Math.sqrt(object.tables.length) * 4.5 + unit(table.name, "ring") * 11;
+              const node = {
+                kind: "node", id: String(table.id), table, domain: domain.name, color: domain.color,
+                x: objectHub.x + Math.cos(nodeAngle) * nodeRing,
+                y: objectHub.y + Math.sin(nodeAngle) * nodeRing * .72,
+                radius: 2.6 + (table.online === "是" ? .8 : 0) + (table.inLake === "是" ? .55 : 0),
+                phase: unit(table.id, "phase") * Math.PI * 2,
+              };
+              nodes.push(node);
+              nodeById.set(node.id, node);
+              edges.push({ from: objectHub, to: node, domain: domain.name, depth: 3, tableIds: [node.id] });
+            });
+          });
+        });
+      });
+    }
+
+    function updateCameraTween(time) {
+      if (!cameraTween) return;
+      const elapsed = Math.min(1, (time - cameraTween.startedAt) / cameraTween.duration);
+      const eased = 1 - Math.pow(1 - elapsed, 3);
+      camera.zoom = cameraTween.from.zoom + (cameraTween.to.zoom - cameraTween.from.zoom) * eased;
+      camera.panX = cameraTween.from.panX + (cameraTween.to.panX - cameraTween.from.panX) * eased;
+      camera.panY = cameraTween.from.panY + (cameraTween.to.panY - cameraTween.from.panY) * eased;
+      if (elapsed >= 1) cameraTween = null;
+      updateZoomLabel();
+    }
+
+    function animateCamera(target, duration = 680) {
+      cameraTween = { from: { ...camera }, to: target, duration, startedAt: performance.now() };
+    }
+
+    function pointFor(item, time = 0) {
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const wobble = item.kind === "node" && !reduced ? 1 : 0;
+      const worldX = item.x + Math.sin(time * .00042 + (item.phase || 0)) * 1.4 * wobble;
+      const worldY = item.y + Math.cos(time * .00037 + (item.phase || 0)) * 1.15 * wobble;
+      const scale = baseScale * camera.zoom;
+      return { x: width / 2 + camera.panX + worldX * scale, y: height / 2 + camera.panY + worldY * scale, scale };
     }
 
     function resize() {
       const rect = stage.getBoundingClientRect();
+      width = Math.max(320, rect.width);
+      height = Math.max(360, rect.height);
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = rect.width;
-      height = rect.height;
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
-      context.setTransform(dpr, 0, 0, dpr, 0, 0);
-      buildPoints();
-      draw();
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      baseScale = Math.min(width / 1450, height / 980);
     }
 
-    function anchors() {
-      const count = dataset.domains.length;
-      const usable = dataset.domains.filter((domain) => domain.count > 0);
-      const centers = new Map();
-      usable.forEach((domain, index) => {
-        const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(usable.length, 1);
-        const ring = index % 2 === 0 ? .25 : .36;
-        centers.set(domain.name, {
-          x: width * .5 + Math.cos(angle) * width * ring,
-          y: height * .51 + Math.sin(angle) * height * (ring + .02),
-        });
-      });
-      dataset.domains.filter((domain) => domain.count === 0).forEach((domain, index) => {
-        centers.set(domain.name, { x: 38 + index * 35, y: 28 });
-      });
-      return centers;
+    function activeDomain(item) { return state.domain === "all" || item.domain === state.domain; }
+    function visibleIds() { return new Set(dataset.tables.filter((table) => tableMatches(table, true)).map((table) => String(table.id))); }
+    function descendantsVisible(item, ids) { return !item.tableIds || item.tableIds.some((id) => ids.has(String(id))); }
+
+    function curvedLine(from, to, bend) {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const midX = (from.x + to.x) / 2 - (dy / length) * bend;
+      const midY = (from.y + to.y) / 2 + (dx / length) * bend;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.quadraticCurveTo(midX, midY, to.x, to.y);
+      ctx.stroke();
     }
 
-    function buildPoints() {
-      const centers = anchors();
-      points = dataset.tables.map((table, index) => {
-        const center = centers.get(table.domain) || { x: width / 2, y: height / 2 };
-        const angle = hash(index + 11) * Math.PI * 2;
-        const radius = Math.pow(hash(index + 91), .58) * Math.min(width, height) * .115;
-        return {
-          table,
-          x: center.x + Math.cos(angle) * radius,
-          y: center.y + Math.sin(angle) * radius * .64,
-          size: 2.1 + hash(index + 203) * 2.8,
-          color: (domainByName.get(table.domain) || {}).color || "#5a5feb",
-        };
-      });
-    }
+    function draw(time) {
+      updateCameraTween(time);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      const ids = visibleIds();
+      const selectedNode = selectedId ? nodeById.get(String(selectedId)) : null;
 
-    function draw() {
-      context.clearRect(0, 0, width, height);
-      const query = state.query.trim().toLowerCase();
-      points.forEach((point) => {
-        const domainActive = state.domain === "all" || point.table.domain === state.domain;
-        const queryMatch = !query || [point.table.name, point.table.englishName, point.table.businessObject, point.table.owner]
-          .join(" ").toLowerCase().includes(query);
-        const active = domainActive && queryMatch;
-        const selected = hoverPoint === point;
-        context.beginPath();
-        context.arc(point.x, point.y, point.size + (selected ? 3 : 0), 0, Math.PI * 2);
-        if (point.table.online === "否") {
-          context.fillStyle = active ? "rgba(255,255,255,.95)" : "rgba(255,255,255,.35)";
-          context.fill();
-          context.strokeStyle = active ? point.color : "rgba(152,164,184,.18)";
-          context.lineWidth = selected ? 2.2 : 1.2;
-          context.stroke();
+      domainHubs.forEach((hub) => {
+        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
+        const point = pointFor(hub, time);
+        hub.screenX = point.x;
+        hub.screenY = point.y;
+        const selected = state.domain === hub.domain;
+        const haloRadius = (selected ? 145 : 105) * point.scale;
+        const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, Math.max(48, haloRadius));
+        gradient.addColorStop(0, `${hub.color}${selected ? "24" : "14"}`);
+        gradient.addColorStop(1, `${hub.color}00`);
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, Math.max(48, haloRadius), 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      edges.forEach((edge, index) => {
+        if (!activeDomain(edge) || !descendantsVisible(edge, ids)) return;
+        const from = pointFor(edge.from, time);
+        const to = pointFor(edge.to, time);
+        const selectedPath = selectedNode && edge.tableIds.includes(selectedNode.id);
+        const domainFocused = state.domain === edge.domain;
+        const alpha = selectedPath ? "9A" : domainFocused ? (edge.depth === 3 ? "50" : "3C") : (edge.depth === 1 ? "25" : "17");
+        ctx.strokeStyle = `${edge.from.color}${alpha}`;
+        ctx.lineWidth = selectedPath ? 1.7 : edge.depth === 1 ? 1.05 : .72;
+        curvedLine(from, to, (unit(index, "bend") - .5) * 14);
+      });
+
+      topicHubs.forEach((hub) => {
+        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
+        const point = pointFor(hub, time);
+        ctx.fillStyle = `${hub.color}${state.domain === hub.domain ? "D8" : "9A"}`;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, Math.max(2.8, 4.2 * point.scale), 0, Math.PI * 2);
+        ctx.fill();
+        if (state.domain === hub.domain || camera.zoom > 1.55) {
+          ctx.fillStyle = "rgba(65,76,98,.72)";
+          ctx.font = "600 10px Inter, PingFang SC, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(hub.label, point.x, point.y - Math.max(10, 12 * point.scale));
+        }
+      });
+
+      objectHubs.forEach((hub) => {
+        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
+        const point = pointFor(hub, time);
+        ctx.fillStyle = `${hub.color}9F`;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, Math.max(2, 3.1 * point.scale), 0, Math.PI * 2);
+        ctx.fill();
+        if (state.domain === hub.domain && camera.zoom > 2.25) {
+          ctx.fillStyle = "rgba(87,98,118,.62)";
+          ctx.font = "500 9px Inter, PingFang SC, sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(hub.label, point.x, point.y - Math.max(8, 9 * point.scale));
+        }
+      });
+
+      domainHubs.forEach((hub) => {
+        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
+        const point = pointFor(hub, time);
+        const hovered = hoveredDomain === hub.domain;
+        ctx.fillStyle = hub.color;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, hovered ? 9 : 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,.96)";
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+        ctx.fillStyle = "rgba(39,49,69,.82)";
+        ctx.font = `${state.domain === hub.domain ? 700 : 650} ${state.domain === hub.domain ? 13 : 11}px Inter, PingFang SC, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText(hub.label, point.x, point.y - 17);
+      });
+
+      nodes.forEach((node) => {
+        if (!activeDomain(node)) return;
+        const point = pointFor(node, time);
+        node.screenX = point.x;
+        node.screenY = point.y;
+        const match = ids.has(node.id);
+        const selected = selectedId === node.id;
+        const hovered = hoveredNode === node;
+        const radius = Math.max(2.2, node.radius * point.scale) * (selected ? 2 : hovered ? 1.55 : 1);
+        if (selected || hovered) {
+          const glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius * 5);
+          glow.addColorStop(0, `${node.color}75`);
+          glow.addColorStop(1, `${node.color}00`);
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, radius * 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = match ? .86 : .055;
+        if (node.table.online === "否") {
+          ctx.fillStyle = "rgba(255,255,255,.95)";
+          ctx.strokeStyle = node.color;
+          ctx.lineWidth = selected ? 2.1 : 1.25;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
         } else {
-          context.fillStyle = active ? point.color : "rgba(145,156,177,.12)";
-          context.globalAlpha = active ? (selected ? 1 : .58) : 1;
-          context.fill();
-          context.globalAlpha = 1;
+          ctx.fillStyle = node.color;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+          ctx.fill();
         }
         if (selected) {
-          context.beginPath();
-          context.arc(point.x, point.y, point.size + 7, 0, Math.PI * 2);
-          context.strokeStyle = `${point.color}55`;
-          context.lineWidth = 2;
-          context.stroke();
+          ctx.strokeStyle = "rgba(255,255,255,.98)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
         }
+        ctx.globalAlpha = 1;
       });
+
+      requestAnimationFrame(draw);
     }
 
-    function nearest(event) {
-      const rect = canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      let nearestPoint = null;
-      let nearestDistance = 13;
-      points.forEach((point) => {
-        const distance = Math.hypot(point.x - x, point.y - y);
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestPoint = point;
-        }
+    function hitTest(x, y) {
+      const ids = visibleIds();
+      let nearest = null;
+      let distance = 14;
+      nodes.forEach((node) => {
+        if (!activeDomain(node) || !ids.has(node.id)) return;
+        const current = Math.hypot(x - node.screenX, y - node.screenY);
+        if (current < distance) { nearest = node; distance = current; }
       });
-      return { point: nearestPoint, x, y };
+      if (nearest) return { type: "node", value: nearest };
+      let domain = null;
+      distance = 22;
+      domainHubs.forEach((hub) => {
+        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
+        const current = Math.hypot(x - hub.screenX, y - hub.screenY);
+        if (current < distance) { domain = hub; distance = current; }
+      });
+      return domain ? { type: "domain", value: domain } : null;
     }
 
-    canvas.addEventListener("mousemove", (event) => {
-      const result = nearest(event);
-      hoverPoint = result.point;
-      if (hoverPoint) {
-        tooltip.innerHTML = `<strong>${escapeHtml(hoverPoint.table.name)}</strong><span>${escapeHtml(hoverPoint.table.domain)} · ${escapeHtml(hoverPoint.table.topic)}</span>`;
-        const left = Math.min(result.x + 14, width - 265);
-        const top = Math.max(8, Math.min(result.y + 12, height - 70));
-        tooltip.style.left = `${left}px`;
-        tooltip.style.top = `${top}px`;
-        tooltip.classList.add("is-visible");
-        canvas.style.cursor = "pointer";
+    function showTooltip(hit, x, y) {
+      if (!hit || dragging) { tooltip.classList.remove("is-visible"); return; }
+      if (hit.type === "node") {
+        tooltip.innerHTML = `<strong>${escapeHtml(hit.value.table.name)}</strong><span>${escapeHtml(hit.value.table.domain)} · ${escapeHtml(hit.value.table.businessObject || "未分类")}</span>`;
       } else {
+        tooltip.innerHTML = `<strong>${escapeHtml(hit.value.label)}</strong><span>${hit.value.tableIds.length} 张数据表 · 点击聚焦</span>`;
+      }
+      const rect = tooltip.getBoundingClientRect();
+      tooltip.style.left = `${Math.max(10, Math.min(width - rect.width - 12, x + 14))}px`;
+      tooltip.style.top = `${Math.max(10, Math.min(height - rect.height - 12, y + 14))}px`;
+      tooltip.classList.add("is-visible");
+    }
+
+    function setZoom(nextZoom, centerX = width / 2, centerY = height / 2) {
+      cameraTween = null;
+      const previous = baseScale * camera.zoom;
+      camera.zoom = Math.max(.58, Math.min(3.2, nextZoom));
+      const ratio = (baseScale * camera.zoom) / previous;
+      camera.panX = centerX - width / 2 - (centerX - width / 2 - camera.panX) * ratio;
+      camera.panY = centerY - height / 2 - (centerY - height / 2 - camera.panY) * ratio;
+      updateZoomLabel();
+    }
+
+    function updateZoomLabel() { els.mapZoomLevel.textContent = `${Math.round(camera.zoom * 100)}%`; }
+
+    function focusDomain(domain) {
+      selectedId = null;
+      if (domain === "all") {
+        animateCamera({ zoom: 1, panX: 0, panY: 0 }, 760);
+        return;
+      }
+      const hub = domainHubByName.get(domain);
+      if (!hub) return;
+      const zoom = width < 650 ? 1.65 : 1.9;
+      animateCamera({ zoom, panX: -hub.x * baseScale * zoom, panY: -hub.y * baseScale * zoom }, 760);
+    }
+
+    function focusTable(id) {
+      const node = nodeById.get(String(id));
+      if (!node) return;
+      selectedId = node.id;
+      const zoom = width < 650 ? 2.05 : 2.35;
+      animateCamera({ zoom, panX: -node.x * baseScale * zoom, panY: -node.y * baseScale * zoom }, 720);
+    }
+
+    canvas.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      moved = false;
+      cameraTween = null;
+      pointerStart = { x: event.clientX, y: event.clientY, panX: camera.panX, panY: camera.panY };
+      canvas.setPointerCapture(event.pointerId);
+      canvas.classList.add("is-dragging");
+    });
+
+    canvas.addEventListener("pointermove", (event) => {
+      const rect = canvas.getBoundingClientRect();
+      lastPointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      if (dragging && pointerStart) {
+        const dx = event.clientX - pointerStart.x;
+        const dy = event.clientY - pointerStart.y;
+        if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+        camera.panX = pointerStart.panX + dx;
+        camera.panY = pointerStart.panY + dy;
+        showTooltip(null);
+        return;
+      }
+      const hit = hitTest(lastPointer.x, lastPointer.y);
+      hoveredNode = hit?.type === "node" ? hit.value : null;
+      hoveredDomain = hit?.type === "domain" ? hit.value.domain : null;
+      canvas.style.cursor = hit ? "pointer" : "grab";
+      showTooltip(hit, lastPointer.x, lastPointer.y);
+    });
+
+    function endPointer(event) {
+      if (!dragging) return;
+      const didMove = moved;
+      dragging = false;
+      pointerStart = null;
+      canvas.classList.remove("is-dragging");
+      if (!didMove) {
+        const hit = hitTest(lastPointer.x, lastPointer.y);
+        if (hit?.type === "node") openDrawer(hit.value.id);
+        if (hit?.type === "domain") selectDomain(hit.value.domain, { closeMobile: false });
+      }
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    }
+
+    canvas.addEventListener("pointerup", endPointer);
+    canvas.addEventListener("pointercancel", endPointer);
+    canvas.addEventListener("pointerleave", () => {
+      if (!dragging) {
+        hoveredNode = null;
+        hoveredDomain = null;
         tooltip.classList.remove("is-visible");
-        canvas.style.cursor = "crosshair";
-      }
-      draw();
-    });
-
-    canvas.addEventListener("mouseleave", () => {
-      hoverPoint = null;
-      tooltip.classList.remove("is-visible");
-      draw();
-    });
-
-    canvas.addEventListener("click", (event) => {
-      const result = nearest(event);
-      if (result.point) {
-        selectDomain(result.point.table.domain);
-        document.getElementById("catalog").scrollIntoView({ behavior: "smooth", block: "start" });
       }
     });
+    stage.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      setZoom(camera.zoom * (event.deltaY < 0 ? 1.12 : .89), event.clientX - rect.left, event.clientY - rect.top);
+    }, { passive: false });
 
-    window.addEventListener("resize", resize);
-    return { resize, draw };
+    buildLayout();
+    new ResizeObserver(resize).observe(stage);
+    resize();
+    updateZoomLabel();
+    requestAnimationFrame(draw);
+
+    return {
+      focusDomain,
+      focusTable,
+      selectTable(id) { selectedId = id === null ? null : String(id); },
+      zoomBy(factor) { setZoom(camera.zoom * factor); },
+    };
   })();
 
   function bindControls() {
-    let searchTimer;
-    els.searchInput.addEventListener("input", (event) => {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => {
-        state.query = event.target.value;
-        renderCatalog();
-        dataMap.draw();
-      }, 120);
+    document.querySelector('.domain-nav-item[data-domain="all"]').addEventListener("click", () => selectDomain("all"));
+    els.domainNavList.addEventListener("click", (event) => {
+      const leaf = event.target.closest("[data-tree-table]");
+      if (leaf) {
+        const table = tableById.get(String(leaf.dataset.treeTable));
+        if (!table) return;
+        selectDomain(table.domain, { focus: false, closeMobile: false });
+        openDrawer(table.id);
+        dataMap.focusTable(table.id);
+        closeSidebar();
+        return;
+      }
+      const row = event.target.closest("[data-tree-toggle]");
+      if (!row) return;
+      const key = row.dataset.treeToggle;
+      state.treeOpen.has(key) ? state.treeOpen.delete(key) : state.treeOpen.add(key);
+      if (row.dataset.domainFocus) selectDomain(row.dataset.domainFocus, { closeMobile: false, expandTree: false });
+      else renderNavigation();
     });
+
+    els.searchInput.addEventListener("input", (event) => { state.query = event.target.value; renderCatalog(); });
     els.onlineFilter.addEventListener("change", (event) => { state.online = event.target.value; renderCatalog(); });
     els.lakeFilter.addEventListener("change", (event) => { state.lake = event.target.value; renderCatalog(); });
-    document.querySelectorAll("[data-view]").forEach((button) => {
-      button.addEventListener("click", () => {
-        state.view = button.dataset.view;
-        document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("is-active", item === button));
-        renderCatalog();
-      });
-    });
+    document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
+      state.view = button.dataset.view;
+      document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("is-active", item === button));
+      renderCatalog();
+    }));
     document.getElementById("clearFilters").addEventListener("click", clearAllFilters);
-    document.getElementById("mapReset").addEventListener("click", () => selectDomain("all"));
+    document.getElementById("mapReset").addEventListener("click", () => selectDomain("all", { closeMobile: false }));
+    document.getElementById("mapZoomIn").addEventListener("click", () => dataMap.zoomBy(1.18));
+    document.getElementById("mapZoomOut").addEventListener("click", () => dataMap.zoomBy(.84));
     document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
     els.drawerScrim.addEventListener("click", closeDrawer);
     document.getElementById("openSidebar").addEventListener("click", openSidebar);
@@ -507,15 +810,8 @@
     document.getElementById("startExplore").addEventListener("click", closeGuide);
     els.guideModal.addEventListener("click", (event) => { if (event.target === els.guideModal) closeGuide(); });
     document.addEventListener("keydown", (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        els.searchInput.focus();
-      }
-      if (event.key === "Escape") {
-        closeDrawer();
-        closeSidebar();
-        closeGuide();
-      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); els.searchInput.focus(); }
+      if (event.key === "Escape") { closeDrawer(); closeSidebar(); closeGuide(); }
     });
   }
 
@@ -523,6 +819,4 @@
   renderMetrics();
   bindControls();
   renderCatalog();
-  requestAnimationFrame(dataMap.resize);
-  setTimeout(dataMap.resize, 80);
 })();

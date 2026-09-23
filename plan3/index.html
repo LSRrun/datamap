@@ -40,7 +40,7 @@
             <span class="nav-label">全部数据表</span>
             <span class="nav-count" id="allDomainCount">0</span>
           </button>
-          <div class="nav-caption">业务主题域</div>
+          <div class="nav-caption">业务主题域 · 点击逐级展开</div>
           <div id="domainNavList"></div>
         </nav>
 
@@ -107,7 +107,7 @@
             <div>
               <span class="section-kicker">DATA LANDSCAPE</span>
               <h2>业务主题分布</h2>
-              <p>每个光点代表一张数据表，颜色区分一级主题域。点击聚类即可筛选。</p>
+              <p>从一级主题域逐层连接到数据表。拖动画布探索，滚轮缩放，点击节点查看详情。</p>
             </div>
             <div class="map-legend">
               <span><i class="legend-dot online"></i>已线上</span>
@@ -117,10 +117,18 @@
           <div class="map-stage" id="mapStage">
             <canvas id="dataMap" aria-label="数据表主题分布交互图"></canvas>
             <div class="map-tooltip" id="mapTooltip" role="status"></div>
-            <button class="map-reset" id="mapReset" type="button">查看全部</button>
+            <div class="map-actions" aria-label="数据地图缩放控制">
+              <button id="mapZoomOut" type="button" aria-label="缩小数据地图">−</button>
+              <span id="mapZoomLevel">100%</span>
+              <button id="mapZoomIn" type="button" aria-label="放大数据地图">＋</button>
+              <button class="map-reset" id="mapReset" type="button">全景</button>
+            </div>
             <div class="map-caption">
               <strong id="mapCaptionTitle">全部主题域</strong>
               <span id="mapCaptionMeta">正在加载数据分布</span>
+            </div>
+            <div class="map-hints" aria-hidden="true">
+              <span>拖拽平移</span><span>滚轮缩放</span><span>点击节点</span>
             </div>
           </div>
         </section>
