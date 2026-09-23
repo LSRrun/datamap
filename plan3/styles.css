@@ -419,6 +419,7 @@ svg {
 .toolbar-controls { display: flex; align-items: flex-end; gap: 10px; }
 .select-control span { display: block; margin: 0 0 5px 2px; color: var(--muted); font-size: 11px; }
 .select-control select { height: 39px; min-width: 112px; padding: 0 28px 0 11px; border: 1px solid var(--line-strong); border-radius: 10px; outline: 0; background: white; color: var(--ink); font-size: 13px; cursor: pointer; }
+.hierarchy-select select { width: 158px; }
 .select-control select:focus { border-color: #aeb4f6; box-shadow: 0 0 0 3px rgba(90,95,235,.08); }
 .view-switch { display: flex; height: 39px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 10px; background: #f4f6fa; }
 .view-switch button { width: 33px; height: 31px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; color: #8994a7; background: transparent; cursor: pointer; }
@@ -529,6 +530,8 @@ svg {
 @media (max-width: 1180px) {
   .table-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .catalog-toolbar { align-items: flex-start; flex-direction: column; }
+  .toolbar-controls { width: 100%; flex-wrap: wrap; }
 }
 
 @media (max-width: 900px) {

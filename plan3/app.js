@@ -4,6 +4,8 @@
   const dataset = window.DATA_MAP || { domains: [], tables: [], meta: {} };
   const state = {
     domain: "all",
+    topic: "all",
+    businessObject: "all",
     query: "",
     online: "all",
     lake: "all",
@@ -19,6 +21,8 @@
     domainNavList: document.getElementById("domainNavList"),
     collapseAllTree: document.getElementById("collapseAllTree"),
     searchInput: document.getElementById("searchInput"),
+    topicFilter: document.getElementById("topicFilter"),
+    businessObjectFilter: document.getElementById("businessObjectFilter"),
     onlineFilter: document.getElementById("onlineFilter"),
     lakeFilter: document.getElementById("lakeFilter"),
     mapAllData: document.getElementById("mapAllData"),
@@ -190,6 +194,8 @@
 
   function tableMatches(table, includeDomain = true) {
     if (includeDomain && state.domain !== "all" && table.domain !== state.domain) return false;
+    if (state.topic !== "all" && table.topic !== state.topic) return false;
+    if (state.businessObject !== "all" && table.businessObject !== state.businessObject) return false;
     if (state.related) {
       if (table.domain !== state.related.domain || table.topic !== state.related.topic) return false;
       if (state.related.type === "l3" && table.businessObject !== state.related.businessObject) return false;
@@ -280,6 +286,8 @@
   function renderActiveFilters() {
     const filters = [];
     if (state.domain !== "all") filters.push({ key: "domain", label: `主题域：${state.domain}` });
+    if (state.topic !== "all") filters.push({ key: "topic", label: `L2：${state.topic}` });
+    if (state.businessObject !== "all") filters.push({ key: "businessObject", label: `L3：${state.businessObject}` });
     if (state.related) filters.push({
       key: "related",
       label: state.related.type === "l3"
@@ -305,7 +313,11 @@
       ? state.related.type === "l3"
         ? `L3 · ${state.related.businessObject || "待完善"}`
         : `L2 · ${state.related.topic}`
-      : state.domain === "all" ? "全部主题域" : state.domain;
+      : state.businessObject !== "all"
+        ? `L3 · ${state.businessObject}`
+        : state.topic !== "all"
+          ? `L2 · ${state.topic}`
+          : state.domain === "all" ? "全部主题域" : state.domain;
     const linkLabel = state.linkMode === "l3" ? "L3 业务对象连线" : "L2 主题域连线";
     els.mapCaptionMeta.textContent = `${tables.length} 张表 · ${linkLabel}`;
   }
@@ -314,6 +326,8 @@
     const nextDomain = domain || "all";
     if (state.related) state.related = null;
     state.domain = nextDomain;
+    state.topic = "all";
+    state.businessObject = "all";
     if (nextDomain !== "all" && options.expandTree !== false) state.treeOpen.add(`d::${nextDomain}`);
     renderNavigation();
     renderCatalog();
@@ -321,7 +335,29 @@
     if (options.closeMobile !== false) closeSidebar();
   }
 
+  function syncHierarchyControls() {
+    const domainTables = dataset.tables.filter((table) => state.domain === "all" || table.domain === state.domain);
+    const topics = [...new Set(domainTables.map((table) => table.topic).filter(Boolean))];
+    if (state.topic !== "all" && !topics.includes(state.topic)) {
+      state.topic = "all";
+      state.businessObject = "all";
+    }
+    els.topicFilter.innerHTML = `<option value="all">全部 L2</option>${topics.map((topic) =>
+      `<option value="${escapeHtml(topic)}">${escapeHtml(topic)}</option>`
+    ).join("")}`;
+    els.topicFilter.value = state.topic;
+
+    const topicTables = domainTables.filter((table) => state.topic === "all" || table.topic === state.topic);
+    const objects = [...new Set(topicTables.map((table) => table.businessObject || "待完善"))];
+    if (state.businessObject !== "all" && !objects.includes(state.businessObject)) state.businessObject = "all";
+    els.businessObjectFilter.innerHTML = `<option value="all">全部 L3</option>${objects.map((object) =>
+      `<option value="${escapeHtml(object)}">${escapeHtml(object)}</option>`
+    ).join("")}`;
+    els.businessObjectFilter.value = state.businessObject;
+  }
+
   function syncStatusControls() {
+    syncHierarchyControls();
     els.onlineFilter.value = state.online;
     els.lakeFilter.value = state.lake;
     els.mapOnlineFilter.value = state.online;
@@ -336,9 +372,22 @@
     renderCatalog();
   }
 
+  function setHierarchyFilter(level, value) {
+    state.related = null;
+    if (level === "topic") {
+      state.topic = value;
+      state.businessObject = "all";
+    } else {
+      state.businessObject = value;
+    }
+    renderCatalog();
+  }
+
   function clearFilter(key) {
     if (key === "domain") return selectDomain("all");
     if (key === "query") { state.query = ""; els.searchInput.value = ""; }
+    if (key === "topic") { state.topic = "all"; state.businessObject = "all"; }
+    if (key === "businessObject") state.businessObject = "all";
     if (key === "online") state.online = "all";
     if (key === "lake") state.lake = "all";
     if (key === "related") state.related = null;
@@ -347,6 +396,8 @@
 
   function clearAllFilters() {
     state.query = "";
+    state.topic = "all";
+    state.businessObject = "all";
     state.online = "all";
     state.lake = "all";
     state.related = null;
@@ -399,6 +450,8 @@
   function applyRelatedFilter(table, type) {
     const nextType = state.related?.type === type ? "reset" : type;
     state.domain = table.domain;
+    state.topic = "all";
+    state.businessObject = "all";
     state.related = nextType === "reset" ? null : {
       type: nextType,
       domain: table.domain,
@@ -792,6 +845,8 @@
     });
 
     els.searchInput.addEventListener("input", (event) => { state.query = event.target.value; renderCatalog(); });
+    els.topicFilter.addEventListener("change", (event) => setHierarchyFilter("topic", event.target.value));
+    els.businessObjectFilter.addEventListener("change", (event) => setHierarchyFilter("businessObject", event.target.value));
     els.onlineFilter.addEventListener("change", (event) => setStatusFilter("online", event.target.value));
     els.lakeFilter.addEventListener("change", (event) => setStatusFilter("lake", event.target.value));
     els.mapOnlineFilter.addEventListener("change", (event) => setStatusFilter("online", event.target.value));
