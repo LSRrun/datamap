@@ -17,6 +17,7 @@
   const els = {
     allDomainCount: document.getElementById("allDomainCount"),
     domainNavList: document.getElementById("domainNavList"),
+    collapseAllTree: document.getElementById("collapseAllTree"),
     searchInput: document.getElementById("searchInput"),
     onlineFilter: document.getElementById("onlineFilter"),
     lakeFilter: document.getElementById("lakeFilter"),
@@ -41,7 +42,6 @@
     mapZoomLevel: document.getElementById("mapZoomLevel"),
     dataFreshness: document.getElementById("dataFreshness"),
     drawer: document.getElementById("detailDrawer"),
-    drawerScrim: document.getElementById("drawerScrim"),
     drawerBody: document.getElementById("drawerBody"),
     drawerDomain: document.getElementById("drawerDomain"),
     sidebar: document.getElementById("sidebar"),
@@ -166,6 +166,7 @@
     }).join("");
 
     if (nav) requestAnimationFrame(() => { nav.scrollTop = savedScroll; });
+    els.collapseAllTree.disabled = state.treeOpen.size === 0;
   }
 
   function renderMetrics() {
@@ -362,7 +363,7 @@
       item.domain === table.domain && item.topic === table.topic && item.businessObject === table.businessObject
     ).length;
     const sameL2Count = dataset.tables.filter((item) => item.domain === table.domain && item.topic === table.topic).length;
-    const activeRelation = state.related?.sourceId === String(table.id) ? state.related.type : null;
+    const activeRelation = state.related?.type || null;
     els.drawer.style.setProperty("--drawer-color", domain.color);
     els.drawerDomain.textContent = table.domain;
     els.drawerBody.innerHTML = `
@@ -374,73 +375,56 @@
         <span class="status-chip ${statusClass(table.online)}">${statusLabel(table.online, "online")}</span>
         <span class="status-chip ${statusClass(table.inLake)}">${statusLabel(table.inLake, "lake")}</span>
       </div>
-      <div class="detail-path">
-        <span>${escapeHtml(table.domain)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-        <span>${escapeHtml(table.topic)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-        <span>${escapeHtml(table.businessObject || "待完善")}</span>
-      </div>
-      <div class="detail-grid">
-        <div class="detail-item"><span>模型负责人</span><strong>${escapeHtml(table.owner || "待完善")}</strong></div>
-        <div class="detail-item"><span>上线时间</span><strong>${escapeHtml(table.launchDate || "待完善")}</strong></div>
-        <div class="detail-item"><span>目录序号</span><strong>#${escapeHtml(table.sourceRow)}</strong></div>
-        <div class="detail-item"><span>业务对象</span><strong>${escapeHtml(table.businessObject || "待完善")}</strong></div>
-      </div>
-      <div class="detail-note"><span>说明</span><p>${escapeHtml(table.description || "暂无补充说明。")}</p></div>
+      <dl class="detail-list">
+        <div><dt>主题域</dt><dd>${escapeHtml(table.topic)}</dd></div>
+        <div><dt>业务对象</dt><dd>${escapeHtml(table.businessObject || "待完善")}</dd></div>
+        <div><dt>模型负责人</dt><dd>${escapeHtml(table.owner || "待完善")}</dd></div>
+      </dl>
       <div class="related-actions">
-        <div class="related-heading">
-          <span>关联浏览</span>
-          <small>保持当前表为定位点，切换同层级数据表</small>
-        </div>
         <button class="relation-button relation-l3 ${activeRelation === "l3" ? "is-active" : ""}" type="button" data-related-action="l3">
-          <span class="relation-level">L3</span>
-          <span><strong>${activeRelation === "l3" ? "正在查看" : "查看相同 L3 业务对象数据表"}</strong><small>${escapeHtml(table.businessObject || "待完善")} · ${sameL3Count} 张</small></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+          <span>${activeRelation === "l3" ? "返回全部数据表" : `查看相同 L3 业务对象数据表（${sameL3Count}）`}</span><b>${activeRelation === "l3" ? "↺" : "→"}</b>
         </button>
         <button class="relation-button relation-l2 ${activeRelation === "l2" ? "is-active" : ""}" type="button" data-related-action="l2">
-          <span class="relation-level">L2</span>
-          <span><strong>${activeRelation === "l2" ? "正在查看" : "查看相同 L2 主题域数据表"}</strong><small>${escapeHtml(table.topic)} · ${sameL2Count} 张</small></span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+          <span>${activeRelation === "l2" ? "返回全部数据表" : `查看相同 L2 主题域数据表（${sameL2Count}）`}</span><b>${activeRelation === "l2" ? "↺" : "→"}</b>
         </button>
-        ${state.related ? `<button class="relation-reset" type="button" data-related-action="reset">返回 ${escapeHtml(table.domain)} 全部数据表</button>` : ""}
       </div>
     `;
     els.drawerBody.querySelectorAll("[data-related-action]").forEach((button) => button.addEventListener("click", () => {
       applyRelatedFilter(table, button.dataset.relatedAction);
     }));
     els.drawer.classList.add("is-open");
-    els.drawerScrim.classList.add("is-open");
     els.drawer.setAttribute("aria-hidden", "false");
-    document.body.style.overflow = "hidden";
-    document.getElementById("closeDrawer").focus();
   }
 
   function applyRelatedFilter(table, type) {
+    const nextType = state.related?.type === type ? "reset" : type;
     state.domain = table.domain;
-    state.related = type === "reset" ? null : {
-      type,
+    state.related = nextType === "reset" ? null : {
+      type: nextType,
       domain: table.domain,
       topic: table.topic,
       businessObject: table.businessObject,
       sourceId: String(table.id),
     };
-    state.query = "";
-    state.online = "all";
-    state.lake = "all";
-    els.searchInput.value = "";
+    if (nextType !== "reset") state.linkMode = nextType;
+    document.querySelectorAll("[data-link-mode]").forEach((item) => {
+      item.classList.toggle("is-active", item.dataset.linkMode === state.linkMode);
+    });
     state.treeOpen.add(`d::${table.domain}`);
     renderNavigation();
     renderCatalog();
-    dataMap.focusDomain(table.domain);
     dataMap.selectTable(table.id);
     openDrawer(table.id);
   }
 
   function closeDrawer() {
     els.drawer.classList.remove("is-open");
-    els.drawerScrim.classList.remove("is-open");
     els.drawer.setAttribute("aria-hidden", "true");
-    document.body.style.overflow = "";
     dataMap.selectTable(null);
+    if (state.related) {
+      state.related = null;
+      renderCatalog();
+    }
   }
 
   function openSidebar() { els.sidebar.classList.add("is-open"); els.sidebarScrim.classList.add("is-open"); }
@@ -784,6 +768,10 @@
 
   function bindControls() {
     document.querySelector('.domain-nav-item[data-domain="all"]').addEventListener("click", () => selectDomain("all"));
+    els.collapseAllTree.addEventListener("click", () => {
+      state.treeOpen.clear();
+      renderNavigation();
+    });
     els.domainNavList.addEventListener("click", (event) => {
       const leaf = event.target.closest("[data-tree-table]");
       if (leaf) {
@@ -828,7 +816,6 @@
     document.getElementById("mapZoomIn").addEventListener("click", () => dataMap.zoomBy(1.18));
     document.getElementById("mapZoomOut").addEventListener("click", () => dataMap.zoomBy(.84));
     document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
-    els.drawerScrim.addEventListener("click", closeDrawer);
     document.getElementById("openSidebar").addEventListener("click", openSidebar);
     document.getElementById("closeSidebar").addEventListener("click", closeSidebar);
     els.sidebarScrim.addEventListener("click", closeSidebar);

@@ -40,7 +40,13 @@
             <span class="nav-label">全部数据表</span>
             <span class="nav-count" id="allDomainCount">0</span>
           </button>
-          <div class="nav-caption">业务主题域 · 点击逐级展开</div>
+          <div class="nav-caption-row">
+            <span>业务主题域 · 点击逐级展开</span>
+            <button id="collapseAllTree" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5" /><path d="m7 19 5-5 5 5" /></svg>
+              全部收起
+            </button>
+          </div>
           <div id="domainNavList"></div>
         </nav>
 
@@ -151,6 +157,13 @@
             <div class="map-hints" aria-hidden="true">
               <span>拖拽平移</span><span>滚轮缩放</span><span>点击节点</span>
             </div>
+            <aside class="detail-drawer" id="detailDrawer" aria-hidden="true" aria-labelledby="drawerTitle">
+              <button class="detail-close" id="closeDrawer" type="button" aria-label="关闭详情">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+              </button>
+              <div class="drawer-domain" id="drawerDomain">数据表详情</div>
+              <div class="drawer-body" id="drawerBody"></div>
+            </aside>
           </div>
         </section>
 
@@ -209,17 +222,6 @@
         </footer>
       </main>
     </div>
-
-    <div class="drawer-scrim" id="drawerScrim"></div>
-    <aside class="detail-drawer" id="detailDrawer" aria-hidden="true" aria-labelledby="drawerTitle">
-      <div class="drawer-header">
-        <div class="drawer-domain" id="drawerDomain">数据表详情</div>
-        <button class="icon-button" id="closeDrawer" aria-label="关闭详情">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
-        </button>
-      </div>
-      <div class="drawer-body" id="drawerBody"></div>
-    </aside>
 
     <div class="guide-modal" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
       <div class="guide-card">
