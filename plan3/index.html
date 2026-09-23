@@ -107,14 +107,35 @@
             <div>
               <span class="section-kicker">DATA LANDSCAPE</span>
               <h2>业务主题分布</h2>
-              <p>从一级主题域逐层连接到数据表。拖动画布探索，滚轮缩放，点击节点查看详情。</p>
             </div>
-            <div class="map-legend">
-              <span><i class="legend-dot online"></i>已线上</span>
-              <span><i class="legend-dot offline"></i>未线上</span>
+            <div class="link-mode-control">
+              <span>连线关系</span>
+              <div class="link-mode-switch" role="group" aria-label="数据表连线层级">
+                <button class="is-active" type="button" data-link-mode="l3">L3 业务对象</button>
+                <button type="button" data-link-mode="l2">L2 主题域</button>
+              </div>
             </div>
           </div>
           <div class="map-stage" id="mapStage">
+            <div class="map-filter-bar" aria-label="数据表状态筛选">
+              <button class="map-all-filter is-active" id="mapAllData" type="button">全部数据</button>
+              <label class="map-status-select">
+                <select id="mapOnlineFilter" aria-label="线上化状态">
+                  <option value="all">线上化</option>
+                  <option value="是">已上线</option>
+                  <option value="否">未上线</option>
+                  <option value="unknown">待确认</option>
+                </select>
+              </label>
+              <label class="map-status-select">
+                <select id="mapLakeFilter" aria-label="入湖状态">
+                  <option value="all">入湖</option>
+                  <option value="是">已入湖</option>
+                  <option value="否">未入湖</option>
+                  <option value="unknown">待确认</option>
+                </select>
+              </label>
+            </div>
             <canvas id="dataMap" aria-label="数据表主题分布交互图"></canvas>
             <div class="map-tooltip" id="mapTooltip" role="status"></div>
             <div class="map-actions" aria-label="数据地图缩放控制">

@@ -8,6 +8,8 @@
     online: "all",
     lake: "all",
     view: "cards",
+    linkMode: "l3",
+    related: null,
     openGroups: new Set(),
     treeOpen: new Set(),
   };
@@ -18,6 +20,9 @@
     searchInput: document.getElementById("searchInput"),
     onlineFilter: document.getElementById("onlineFilter"),
     lakeFilter: document.getElementById("lakeFilter"),
+    mapAllData: document.getElementById("mapAllData"),
+    mapOnlineFilter: document.getElementById("mapOnlineFilter"),
+    mapLakeFilter: document.getElementById("mapLakeFilter"),
     catalogGroups: document.getElementById("catalogGroups"),
     catalogTitle: document.getElementById("catalogTitle"),
     resultSummary: document.getElementById("resultSummary"),
@@ -184,6 +189,10 @@
 
   function tableMatches(table, includeDomain = true) {
     if (includeDomain && state.domain !== "all" && table.domain !== state.domain) return false;
+    if (state.related) {
+      if (table.domain !== state.related.domain || table.topic !== state.related.topic) return false;
+      if (state.related.type === "l3" && table.businessObject !== state.related.businessObject) return false;
+    }
     if (state.online !== "all") {
       if (state.online === "unknown" ? Boolean(table.online) : table.online !== state.online) return false;
     }
@@ -228,8 +237,13 @@
       return { domain, topic, tables: groupTables };
     });
     const selectedDomain = state.domain === "all" ? null : domainByName.get(state.domain);
+    const relatedTitle = state.related
+      ? state.related.type === "l3"
+        ? `同 L3 业务对象：${state.related.businessObject || "待完善"}`
+        : `同 L2 主题域：${state.related.topic}`
+      : null;
 
-    els.catalogTitle.textContent = selectedDomain ? selectedDomain.name : "全部数据表";
+    els.catalogTitle.textContent = relatedTitle || (selectedDomain ? selectedDomain.name : "全部数据表");
     els.resultSummary.textContent = `共找到 ${tables.length} 张数据表，分布在 ${new Set(tables.map((item) => item.topic)).size} 个二级主题域`;
     els.catalogGroups.classList.toggle("is-compact", state.view === "compact");
     els.catalogGroups.innerHTML = groups.map((group) => {
@@ -259,11 +273,18 @@
     }));
     renderActiveFilters();
     updateMapCaption(tables);
+    syncStatusControls();
   }
 
   function renderActiveFilters() {
     const filters = [];
     if (state.domain !== "all") filters.push({ key: "domain", label: `主题域：${state.domain}` });
+    if (state.related) filters.push({
+      key: "related",
+      label: state.related.type === "l3"
+        ? `同 L3：${state.related.businessObject || "待完善"}`
+        : `同 L2：${state.related.topic}`,
+    });
     if (state.query) filters.push({ key: "query", label: `搜索：${state.query}` });
     if (state.online !== "all") filters.push({ key: "online", label: `线上：${statusLabel(state.online === "unknown" ? "" : state.online, "online")}` });
     if (state.lake !== "all") filters.push({ key: "lake", label: `入湖：${statusLabel(state.lake === "unknown" ? "" : state.lake, "lake")}` });
@@ -279,12 +300,18 @@
   }
 
   function updateMapCaption(tables) {
-    els.mapCaptionTitle.textContent = state.domain === "all" ? "全部主题域" : state.domain;
-    els.mapCaptionMeta.textContent = `${tables.length} 张表 · ${new Set(tables.map((item) => item.topic)).size} 个二级主题域`;
+    els.mapCaptionTitle.textContent = state.related
+      ? state.related.type === "l3"
+        ? `L3 · ${state.related.businessObject || "待完善"}`
+        : `L2 · ${state.related.topic}`
+      : state.domain === "all" ? "全部主题域" : state.domain;
+    const linkLabel = state.linkMode === "l3" ? "L3 业务对象连线" : "L2 主题域连线";
+    els.mapCaptionMeta.textContent = `${tables.length} 张表 · ${linkLabel}`;
   }
 
   function selectDomain(domain, options = {}) {
     const nextDomain = domain || "all";
+    if (state.related) state.related = null;
     state.domain = nextDomain;
     if (nextDomain !== "all" && options.expandTree !== false) state.treeOpen.add(`d::${nextDomain}`);
     renderNavigation();
@@ -293,11 +320,27 @@
     if (options.closeMobile !== false) closeSidebar();
   }
 
+  function syncStatusControls() {
+    els.onlineFilter.value = state.online;
+    els.lakeFilter.value = state.lake;
+    els.mapOnlineFilter.value = state.online;
+    els.mapLakeFilter.value = state.lake;
+    els.mapAllData.classList.toggle("is-active", state.online === "all" && state.lake === "all");
+    els.mapOnlineFilter.closest(".map-status-select").classList.toggle("is-filtered", state.online !== "all");
+    els.mapLakeFilter.closest(".map-status-select").classList.toggle("is-filtered", state.lake !== "all");
+  }
+
+  function setStatusFilter(key, value) {
+    state[key] = value;
+    renderCatalog();
+  }
+
   function clearFilter(key) {
     if (key === "domain") return selectDomain("all");
     if (key === "query") { state.query = ""; els.searchInput.value = ""; }
-    if (key === "online") { state.online = "all"; els.onlineFilter.value = "all"; }
-    if (key === "lake") { state.lake = "all"; els.lakeFilter.value = "all"; }
+    if (key === "online") state.online = "all";
+    if (key === "lake") state.lake = "all";
+    if (key === "related") state.related = null;
     renderCatalog();
   }
 
@@ -305,9 +348,8 @@
     state.query = "";
     state.online = "all";
     state.lake = "all";
+    state.related = null;
     els.searchInput.value = "";
-    els.onlineFilter.value = "all";
-    els.lakeFilter.value = "all";
     selectDomain("all");
   }
 
@@ -316,6 +358,11 @@
     if (!table) return;
     dataMap.selectTable(table.id);
     const domain = domainByName.get(table.domain) || { color: "#5a5feb" };
+    const sameL3Count = dataset.tables.filter((item) =>
+      item.domain === table.domain && item.topic === table.topic && item.businessObject === table.businessObject
+    ).length;
+    const sameL2Count = dataset.tables.filter((item) => item.domain === table.domain && item.topic === table.topic).length;
+    const activeRelation = state.related?.sourceId === String(table.id) ? state.related.type : null;
     els.drawer.style.setProperty("--drawer-color", domain.color);
     els.drawerDomain.textContent = table.domain;
     els.drawerBody.innerHTML = `
@@ -339,12 +386,53 @@
         <div class="detail-item"><span>业务对象</span><strong>${escapeHtml(table.businessObject || "待完善")}</strong></div>
       </div>
       <div class="detail-note"><span>说明</span><p>${escapeHtml(table.description || "暂无补充说明。")}</p></div>
+      <div class="related-actions">
+        <div class="related-heading">
+          <span>关联浏览</span>
+          <small>保持当前表为定位点，切换同层级数据表</small>
+        </div>
+        <button class="relation-button relation-l3 ${activeRelation === "l3" ? "is-active" : ""}" type="button" data-related-action="l3">
+          <span class="relation-level">L3</span>
+          <span><strong>${activeRelation === "l3" ? "正在查看" : "查看相同 L3 业务对象数据表"}</strong><small>${escapeHtml(table.businessObject || "待完善")} · ${sameL3Count} 张</small></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+        </button>
+        <button class="relation-button relation-l2 ${activeRelation === "l2" ? "is-active" : ""}" type="button" data-related-action="l2">
+          <span class="relation-level">L2</span>
+          <span><strong>${activeRelation === "l2" ? "正在查看" : "查看相同 L2 主题域数据表"}</strong><small>${escapeHtml(table.topic)} · ${sameL2Count} 张</small></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+        </button>
+        ${state.related ? `<button class="relation-reset" type="button" data-related-action="reset">返回 ${escapeHtml(table.domain)} 全部数据表</button>` : ""}
+      </div>
     `;
+    els.drawerBody.querySelectorAll("[data-related-action]").forEach((button) => button.addEventListener("click", () => {
+      applyRelatedFilter(table, button.dataset.relatedAction);
+    }));
     els.drawer.classList.add("is-open");
     els.drawerScrim.classList.add("is-open");
     els.drawer.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
     document.getElementById("closeDrawer").focus();
+  }
+
+  function applyRelatedFilter(table, type) {
+    state.domain = table.domain;
+    state.related = type === "reset" ? null : {
+      type,
+      domain: table.domain,
+      topic: table.topic,
+      businessObject: table.businessObject,
+      sourceId: String(table.id),
+    };
+    state.query = "";
+    state.online = "all";
+    state.lake = "all";
+    els.searchInput.value = "";
+    state.treeOpen.add(`d::${table.domain}`);
+    renderNavigation();
+    renderCatalog();
+    dataMap.focusDomain(table.domain);
+    dataMap.selectTable(table.id);
+    openDrawer(table.id);
   }
 
   function closeDrawer() {
@@ -365,10 +453,8 @@
     const tooltip = document.getElementById("mapTooltip");
     const ctx = canvas.getContext("2d");
     const domainHubs = [];
-    const topicHubs = [];
-    const objectHubs = [];
     const nodes = [];
-    const edges = [];
+    const links = { l2: [], l3: [] };
     const nodeById = new Map();
     const domainHubByName = new Map();
     let width = 0;
@@ -377,7 +463,6 @@
     let baseScale = 1;
     let selectedId = null;
     let hoveredNode = null;
-    let hoveredDomain = null;
     let dragging = false;
     let moved = false;
     let pointerStart = null;
@@ -401,54 +486,46 @@
       const active = hierarchy.filter((domain) => domain.count > 0);
       active.forEach((domain, domainIndex) => {
         const angle = -Math.PI / 2 + (domainIndex / active.length) * Math.PI * 2;
-        const ring = domainIndex % 2 === 0 ? 1 : .86;
+        const ring = domainIndex % 2 === 0 ? 1 : .82;
         const domainHub = {
           kind: "domain", domain: domain.name, label: domain.name, color: domain.color,
-          x: Math.cos(angle) * 500 * ring, y: Math.sin(angle) * 320 * ring,
+          x: Math.cos(angle) * 315 * ring, y: Math.sin(angle) * 210 * ring,
+          phase: domainIndex,
           tableIds: domain.topics.flatMap((topic) => topic.objects.flatMap((object) => object.tables.map((table) => String(table.id)))),
         };
         domainHubs.push(domainHub);
         domainHubByName.set(domain.name, domainHub);
+      });
 
-        domain.topics.forEach((topic, topicIndex) => {
-          const topicAngle = -Math.PI / 2 + (topicIndex / Math.max(domain.topics.length, 1)) * Math.PI * 2;
-          const topicRing = 62 + Math.min(78, domain.topics.length * 7);
-          const topicHub = {
-            kind: "topic", domain: domain.name, label: topic.name, color: domain.color,
-            x: domainHub.x + Math.cos(topicAngle) * topicRing,
-            y: domainHub.y + Math.sin(topicAngle) * topicRing * .72,
-            tableIds: topic.objects.flatMap((object) => object.tables.map((table) => String(table.id))),
-          };
-          topicHubs.push(topicHub);
-          edges.push({ from: domainHub, to: topicHub, domain: domain.name, depth: 1, tableIds: topicHub.tableIds });
+      dataset.tables.forEach((table, tableIndex) => {
+        const cluster = domainHubByName.get(table.domain) || { x: 0, y: 0, color: "#5a5feb" };
+        const radius = 24 + unit(table.name, "radius") * (44 + Math.sqrt(tableIndex + 1) * 1.5);
+        const angle = unit(`${table.name}${table.businessObject}`, "angle") * Math.PI * 2;
+        const jitterX = (unit(table.englishName || table.name, "jx") - .5) * 28;
+        const jitterY = (unit(table.owner || table.name, "jy") - .5) * 22;
+        const node = {
+          kind: "node", id: String(table.id), table, domain: table.domain, color: cluster.color,
+          x: cluster.x + Math.cos(angle) * radius + jitterX,
+          y: cluster.y + Math.sin(angle) * radius * .78 + jitterY,
+          radius: 2.4 + (table.online === "是" ? 1 : 0) + (table.inLake === "是" ? .65 : 0),
+          phase: unit(table.name, "phase") * Math.PI * 2,
+        };
+        nodes.push(node);
+        nodeById.set(node.id, node);
+      });
 
-          topic.objects.forEach((object, objectIndex) => {
-            const objectAngle = topicAngle + (objectIndex / Math.max(topic.objects.length, 1)) * Math.PI * 2;
-            const objectRing = 22 + Math.min(34, topic.objects.length * 4.2);
-            const objectHub = {
-              kind: "object", domain: domain.name, label: object.name, color: domain.color,
-              x: topicHub.x + Math.cos(objectAngle) * objectRing,
-              y: topicHub.y + Math.sin(objectAngle) * objectRing * .7,
-              tableIds: object.tables.map((table) => String(table.id)),
-            };
-            objectHubs.push(objectHub);
-            edges.push({ from: topicHub, to: objectHub, domain: domain.name, depth: 2, tableIds: objectHub.tableIds });
-
-            object.tables.forEach((table, tableIndex) => {
-              const nodeAngle = unit(table.id, "angle") * Math.PI * 2 + tableIndex * .8;
-              const nodeRing = 11 + Math.sqrt(object.tables.length) * 4.5 + unit(table.name, "ring") * 11;
-              const node = {
-                kind: "node", id: String(table.id), table, domain: domain.name, color: domain.color,
-                x: objectHub.x + Math.cos(nodeAngle) * nodeRing,
-                y: objectHub.y + Math.sin(nodeAngle) * nodeRing * .72,
-                radius: 2.6 + (table.online === "是" ? .8 : 0) + (table.inLake === "是" ? .55 : 0),
-                phase: unit(table.id, "phase") * Math.PI * 2,
-              };
-              nodes.push(node);
-              nodeById.set(node.id, node);
-              edges.push({ from: objectHub, to: node, domain: domain.name, depth: 3, tableIds: [node.id] });
-            });
-          });
+      ["l2", "l3"].forEach((mode) => {
+        const groups = new Map();
+        nodes.forEach((node) => {
+          const relation = mode === "l2" ? node.table.topic : node.table.businessObject;
+          const key = `${node.domain}|${relation || "待分类"}`;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(node);
+        });
+        groups.forEach((groupNodes, key) => {
+          for (let index = 1; index < groupNodes.length; index += 1) {
+            links[mode].push({ from: groupNodes[index - 1], to: groupNodes[index], key });
+          }
         });
       });
     }
@@ -486,23 +563,15 @@
       canvas.height = Math.round(height * dpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      baseScale = Math.min(width / 1450, height / 980);
+      baseScale = Math.min(width / 1050, height / 720);
     }
 
     function activeDomain(item) { return state.domain === "all" || item.domain === state.domain; }
     function visibleIds() { return new Set(dataset.tables.filter((table) => tableMatches(table, true)).map((table) => String(table.id))); }
     function descendantsVisible(item, ids) { return !item.tableIds || item.tableIds.some((id) => ids.has(String(id))); }
-
-    function curvedLine(from, to, bend) {
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const length = Math.max(1, Math.hypot(dx, dy));
-      const midX = (from.x + to.x) / 2 - (dy / length) * bend;
-      const midY = (from.y + to.y) / 2 + (dx / length) * bend;
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.quadraticCurveTo(midX, midY, to.x, to.y);
-      ctx.stroke();
+    function relationKey(node, mode = state.linkMode) {
+      const relation = mode === "l2" ? node.table.topic : node.table.businessObject;
+      return `${node.domain}|${relation || "待分类"}`;
     }
 
     function draw(time) {
@@ -511,80 +580,45 @@
       ctx.clearRect(0, 0, width, height);
       const ids = visibleIds();
       const selectedNode = selectedId ? nodeById.get(String(selectedId)) : null;
+      const selectedPeers = selectedNode
+        ? new Set(nodes.filter((node) => relationKey(node) === relationKey(selectedNode)).map((node) => node.id))
+        : new Set();
 
       domainHubs.forEach((hub) => {
         if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
         const point = pointFor(hub, time);
         hub.screenX = point.x;
         hub.screenY = point.y;
-        const selected = state.domain === hub.domain;
-        const haloRadius = (selected ? 145 : 105) * point.scale;
-        const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, Math.max(48, haloRadius));
-        gradient.addColorStop(0, `${hub.color}${selected ? "24" : "14"}`);
+        const haloRadius = 86 * point.scale;
+        const gradient = ctx.createRadialGradient(point.x, point.y, 2, point.x, point.y, Math.max(38, haloRadius));
+        gradient.addColorStop(0, `${hub.color}12`);
         gradient.addColorStop(1, `${hub.color}00`);
         ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(point.x, point.y, Math.max(48, haloRadius), 0, Math.PI * 2);
+        ctx.arc(point.x, point.y, Math.max(38, haloRadius), 0, Math.PI * 2);
         ctx.fill();
       });
 
-      edges.forEach((edge, index) => {
-        if (!activeDomain(edge) || !descendantsVisible(edge, ids)) return;
+      links[state.linkMode].forEach((edge) => {
+        if (!activeDomain(edge.from) || !ids.has(edge.from.id) || !ids.has(edge.to.id)) return;
         const from = pointFor(edge.from, time);
         const to = pointFor(edge.to, time);
-        const selectedPath = selectedNode && edge.tableIds.includes(selectedNode.id);
-        const domainFocused = state.domain === edge.domain;
-        const alpha = selectedPath ? "9A" : domainFocused ? (edge.depth === 3 ? "50" : "3C") : (edge.depth === 1 ? "25" : "17");
-        ctx.strokeStyle = `${edge.from.color}${alpha}`;
-        ctx.lineWidth = selectedPath ? 1.7 : edge.depth === 1 ? 1.05 : .72;
-        curvedLine(from, to, (unit(index, "bend") - .5) * 14);
-      });
-
-      topicHubs.forEach((hub) => {
-        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
-        const point = pointFor(hub, time);
-        ctx.fillStyle = `${hub.color}${state.domain === hub.domain ? "D8" : "9A"}`;
+        const emphasized = selectedNode && edge.key === relationKey(selectedNode);
         ctx.beginPath();
-        ctx.arc(point.x, point.y, Math.max(2.8, 4.2 * point.scale), 0, Math.PI * 2);
-        ctx.fill();
-        if (state.domain === hub.domain || camera.zoom > 1.55) {
-          ctx.fillStyle = "rgba(65,76,98,.72)";
-          ctx.font = "600 10px Inter, PingFang SC, sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(hub.label, point.x, point.y - Math.max(10, 12 * point.scale));
-        }
-      });
-
-      objectHubs.forEach((hub) => {
-        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
-        const point = pointFor(hub, time);
-        ctx.fillStyle = `${hub.color}9F`;
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, Math.max(2, 3.1 * point.scale), 0, Math.PI * 2);
-        ctx.fill();
-        if (state.domain === hub.domain && camera.zoom > 2.25) {
-          ctx.fillStyle = "rgba(87,98,118,.62)";
-          ctx.font = "500 9px Inter, PingFang SC, sans-serif";
-          ctx.textAlign = "center";
-          ctx.fillText(hub.label, point.x, point.y - Math.max(8, 9 * point.scale));
-        }
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.strokeStyle = emphasized ? `${edge.from.color}70` : "rgba(111,132,177,.11)";
+        ctx.lineWidth = emphasized ? 1.2 : .55;
+        ctx.stroke();
       });
 
       domainHubs.forEach((hub) => {
         if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
         const point = pointFor(hub, time);
-        const hovered = hoveredDomain === hub.domain;
-        ctx.fillStyle = hub.color;
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, hovered ? 9 : 7, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,.96)";
-        ctx.lineWidth = 2.2;
-        ctx.stroke();
-        ctx.fillStyle = "rgba(39,49,69,.82)";
-        ctx.font = `${state.domain === hub.domain ? 700 : 650} ${state.domain === hub.domain ? 13 : 11}px Inter, PingFang SC, sans-serif`;
+        ctx.fillStyle = "rgba(83,94,117,.64)";
+        ctx.font = "600 10px Inter, PingFang SC, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(hub.label, point.x, point.y - 17);
+        ctx.fillText(`${hub.label} · ${hub.tableIds.length}`, point.x, point.y - 50 * point.scale);
       });
 
       nodes.forEach((node) => {
@@ -595,7 +629,8 @@
         const match = ids.has(node.id);
         const selected = selectedId === node.id;
         const hovered = hoveredNode === node;
-        const radius = Math.max(2.2, node.radius * point.scale) * (selected ? 2 : hovered ? 1.55 : 1);
+        const peer = selectedPeers.has(node.id);
+        const radius = Math.max(2.1, node.radius * point.scale) * (selected ? 1.95 : hovered ? 1.5 : peer ? 1.25 : 1);
         if (selected || hovered) {
           const glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, radius * 5);
           glow.addColorStop(0, `${node.color}75`);
@@ -605,22 +640,13 @@
           ctx.arc(point.x, point.y, radius * 5, 0, Math.PI * 2);
           ctx.fill();
         }
-        ctx.globalAlpha = match ? .86 : .055;
-        if (node.table.online === "否") {
-          ctx.fillStyle = "rgba(255,255,255,.95)";
-          ctx.strokeStyle = node.color;
-          ctx.lineWidth = selected ? 2.1 : 1.25;
-          ctx.beginPath();
-          ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = node.color;
-          ctx.beginPath();
-          ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        ctx.globalAlpha = match ? .82 : .055;
+        ctx.fillStyle = node.color;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        ctx.fill();
         if (selected) {
+          ctx.globalAlpha = 1;
           ctx.strokeStyle = "rgba(255,255,255,.98)";
           ctx.lineWidth = 2;
           ctx.stroke();
@@ -641,22 +667,14 @@
         if (current < distance) { nearest = node; distance = current; }
       });
       if (nearest) return { type: "node", value: nearest };
-      let domain = null;
-      distance = 22;
-      domainHubs.forEach((hub) => {
-        if (!activeDomain(hub) || !descendantsVisible(hub, ids)) return;
-        const current = Math.hypot(x - hub.screenX, y - hub.screenY);
-        if (current < distance) { domain = hub; distance = current; }
-      });
-      return domain ? { type: "domain", value: domain } : null;
+      return null;
     }
 
     function showTooltip(hit, x, y) {
       if (!hit || dragging) { tooltip.classList.remove("is-visible"); return; }
       if (hit.type === "node") {
-        tooltip.innerHTML = `<strong>${escapeHtml(hit.value.table.name)}</strong><span>${escapeHtml(hit.value.table.domain)} · ${escapeHtml(hit.value.table.businessObject || "未分类")}</span>`;
-      } else {
-        tooltip.innerHTML = `<strong>${escapeHtml(hit.value.label)}</strong><span>${hit.value.tableIds.length} 张数据表 · 点击聚焦</span>`;
+        const relation = state.linkMode === "l3" ? hit.value.table.businessObject : hit.value.table.topic;
+        tooltip.innerHTML = `<strong>${escapeHtml(hit.value.table.name)}</strong><span>${state.linkMode.toUpperCase()} · ${escapeHtml(relation || "未分类")}</span>`;
       }
       const rect = tooltip.getBoundingClientRect();
       tooltip.style.left = `${Math.max(10, Math.min(width - rect.width - 12, x + 14))}px`;
@@ -719,7 +737,6 @@
       }
       const hit = hitTest(lastPointer.x, lastPointer.y);
       hoveredNode = hit?.type === "node" ? hit.value : null;
-      hoveredDomain = hit?.type === "domain" ? hit.value.domain : null;
       canvas.style.cursor = hit ? "pointer" : "grab";
       showTooltip(hit, lastPointer.x, lastPointer.y);
     });
@@ -733,7 +750,6 @@
       if (!didMove) {
         const hit = hitTest(lastPointer.x, lastPointer.y);
         if (hit?.type === "node") openDrawer(hit.value.id);
-        if (hit?.type === "domain") selectDomain(hit.value.domain, { closeMobile: false });
       }
       if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
     }
@@ -743,7 +759,6 @@
     canvas.addEventListener("pointerleave", () => {
       if (!dragging) {
         hoveredNode = null;
-        hoveredDomain = null;
         tooltip.classList.remove("is-visible");
       }
     });
@@ -789,12 +804,24 @@
     });
 
     els.searchInput.addEventListener("input", (event) => { state.query = event.target.value; renderCatalog(); });
-    els.onlineFilter.addEventListener("change", (event) => { state.online = event.target.value; renderCatalog(); });
-    els.lakeFilter.addEventListener("change", (event) => { state.lake = event.target.value; renderCatalog(); });
+    els.onlineFilter.addEventListener("change", (event) => setStatusFilter("online", event.target.value));
+    els.lakeFilter.addEventListener("change", (event) => setStatusFilter("lake", event.target.value));
+    els.mapOnlineFilter.addEventListener("change", (event) => setStatusFilter("online", event.target.value));
+    els.mapLakeFilter.addEventListener("change", (event) => setStatusFilter("lake", event.target.value));
+    els.mapAllData.addEventListener("click", () => {
+      state.online = "all";
+      state.lake = "all";
+      renderCatalog();
+    });
     document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => {
       state.view = button.dataset.view;
       document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("is-active", item === button));
       renderCatalog();
+    }));
+    document.querySelectorAll("[data-link-mode]").forEach((button) => button.addEventListener("click", () => {
+      state.linkMode = button.dataset.linkMode;
+      document.querySelectorAll("[data-link-mode]").forEach((item) => item.classList.toggle("is-active", item === button));
+      updateMapCaption(filteredTables());
     }));
     document.getElementById("clearFilters").addEventListener("click", clearAllFilters);
     document.getElementById("mapReset").addEventListener("click", () => selectDomain("all", { closeMobile: false }));
