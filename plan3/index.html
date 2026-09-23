@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="东鹏数据地图——按业务主题域浏览、检索和查看部门数据表。"
+    />
+    <meta name="theme-color" content="#f4f7fb" />
+    <title>东鹏数据地图</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%235d5fef'/%3E%3Cstop offset='1' stop-color='%2309b8d1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 20h28v8H18zm0 12h18v8H18zm22 0h6v8h-6z' fill='white'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand-row">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div>
+            <strong>东鹏数据地图</strong>
+            <small>DATA CATALOG</small>
+          </div>
+          <button class="icon-button mobile-only" id="closeSidebar" aria-label="关闭导航">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+
+        <nav class="domain-nav" aria-label="主题域导航">
+          <button class="domain-nav-item is-active" type="button" data-domain="all">
+            <span class="nav-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" /></svg>
+            </span>
+            <span class="nav-label">全部数据表</span>
+            <span class="nav-count" id="allDomainCount">0</span>
+          </button>
+          <div class="nav-caption">业务主题域</div>
+          <div id="domainNavList"></div>
+        </nav>
+
+        <div class="sidebar-foot">
+          <div class="completion-ring" id="completionRing"><span>0%</span></div>
+          <div>
+            <strong>数据入湖进度</strong>
+            <small id="completionText">正在统计</small>
+          </div>
+        </div>
+      </aside>
+
+      <div class="sidebar-scrim" id="sidebarScrim"></div>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="icon-button menu-button" id="openSidebar" aria-label="打开导航">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+          <div class="page-title">
+            <span class="eyebrow">企业数据资产</span>
+            <h1>数据地图</h1>
+          </div>
+          <label class="global-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4" /></svg>
+            <input id="searchInput" type="search" placeholder="搜索中文表名、英文表名、业务对象或负责人" autocomplete="off" />
+            <kbd>⌘ K</kbd>
+          </label>
+          <button class="help-button" type="button" id="showGuide">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.4 2.4 0 1 1 3.5 2.1c-.9.5-1.3 1.1-1.3 2M12 17h.01" /></svg>
+            使用说明
+          </button>
+        </header>
+
+        <section class="metrics-grid" aria-label="数据地图统计">
+          <article class="metric-card metric-primary">
+            <div class="metric-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></svg>
+            </div>
+            <div><span>数据表</span><strong id="metricTables">—</strong><small>当前目录表项</small></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-icon violet">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="3" /><circle cx="18" cy="6" r="3" /><circle cx="12" cy="18" r="3" /><path d="m8.5 7.7 2 7M15.5 7.7l-2 7M9 6h6" /></svg>
+            </div>
+            <div><span>一级主题域</span><strong id="metricDomains">—</strong><small>覆盖核心业务板块</small></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-icon cyan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 12 3 3 7-7" /><circle cx="12" cy="12" r="9" /></svg>
+            </div>
+            <div><span>已线上化</span><strong id="metricOnline">—</strong><small id="onlineRatio">—</small></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-icon green">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v10H4zM8 3h8v4M8 21h8v-4" /><path d="m9 12 2 2 4-4" /></svg>
+            </div>
+            <div><span>已入湖</span><strong id="metricLake">—</strong><small id="lakeRatio">—</small></div>
+          </article>
+        </section>
+
+        <section class="map-panel">
+          <div class="section-heading map-heading">
+            <div>
+              <span class="section-kicker">DATA LANDSCAPE</span>
+              <h2>业务主题分布</h2>
+              <p>每个光点代表一张数据表，颜色区分一级主题域。点击聚类即可筛选。</p>
+            </div>
+            <div class="map-legend">
+              <span><i class="legend-dot online"></i>已线上</span>
+              <span><i class="legend-dot offline"></i>未线上</span>
+            </div>
+          </div>
+          <div class="map-stage" id="mapStage">
+            <canvas id="dataMap" aria-label="数据表主题分布交互图"></canvas>
+            <div class="map-tooltip" id="mapTooltip" role="status"></div>
+            <button class="map-reset" id="mapReset" type="button">查看全部</button>
+            <div class="map-caption">
+              <strong id="mapCaptionTitle">全部主题域</strong>
+              <span id="mapCaptionMeta">正在加载数据分布</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="catalog-panel" id="catalog">
+          <div class="catalog-toolbar">
+            <div>
+              <span class="section-kicker">DATA CATALOG</span>
+              <h2 id="catalogTitle">全部数据表</h2>
+              <p id="resultSummary">正在加载目录</p>
+            </div>
+            <div class="toolbar-controls">
+              <label class="select-control">
+                <span>线上状态</span>
+                <select id="onlineFilter">
+                  <option value="all">全部</option>
+                  <option value="是">已线上</option>
+                  <option value="否">未线上</option>
+                  <option value="unknown">待确认</option>
+                </select>
+              </label>
+              <label class="select-control">
+                <span>入湖状态</span>
+                <select id="lakeFilter">
+                  <option value="all">全部</option>
+                  <option value="是">已入湖</option>
+                  <option value="否">未入湖</option>
+                  <option value="unknown">待确认</option>
+                </select>
+              </label>
+              <div class="view-switch" aria-label="展示密度">
+                <button type="button" class="is-active" data-view="cards" aria-label="卡片视图">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" /></svg>
+                </button>
+                <button type="button" data-view="compact" aria-label="紧凑视图">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="active-filters" id="activeFilters" hidden></div>
+          <div class="catalog-groups" id="catalogGroups"></div>
+          <div class="empty-state" id="emptyState" hidden>
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m16 16 4 4M8.5 11h5" /></svg>
+            </div>
+            <h3>没有找到匹配的数据表</h3>
+            <p>可以调整关键词或筛选条件后再试。</p>
+            <button type="button" id="clearFilters">清除筛选</button>
+          </div>
+        </section>
+
+        <footer class="page-footer">
+          <span>数据来源：部门数据模型目录</span>
+          <span id="dataFreshness">目录数据已加载</span>
+        </footer>
+      </main>
+    </div>
+
+    <div class="drawer-scrim" id="drawerScrim"></div>
+    <aside class="detail-drawer" id="detailDrawer" aria-hidden="true" aria-labelledby="drawerTitle">
+      <div class="drawer-header">
+        <div class="drawer-domain" id="drawerDomain">数据表详情</div>
+        <button class="icon-button" id="closeDrawer" aria-label="关闭详情">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      <div class="drawer-body" id="drawerBody"></div>
+    </aside>
+
+    <div class="guide-modal" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
+      <div class="guide-card">
+        <button class="icon-button guide-close" id="closeGuide" aria-label="关闭使用说明">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+        <span class="section-kicker">QUICK GUIDE</span>
+        <h2 id="guideTitle">三步找到需要的数据表</h2>
+        <div class="guide-steps">
+          <div><b>1</b><strong>选择主题域</strong><span>从左侧导航或主题分布图进入业务分类。</span></div>
+          <div><b>2</b><strong>搜索与筛选</strong><span>按名称、负责人、线上及入湖状态缩小范围。</span></div>
+          <div><b>3</b><strong>查看表详情</strong><span>点击任意卡片，查看英文表名、业务对象和负责人。</span></div>
+        </div>
+        <button class="primary-button" id="startExplore" type="button">开始浏览</button>
+      </div>
+    </div>
+
+    <script src="./data.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

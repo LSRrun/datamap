@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="东鹏数据地图主题域目录" />
+    <title>东鹏数据地图 · 主题域目录</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-logo"><i></i><i></i><i></i></span>
+          <span><strong>东鹏数据地图</strong><small>DATA CATALOG</small></span>
+        </div>
+
+        <div class="side-title"><span>主题域目录</span><b id="domainTotal">0</b></div>
+        <nav id="domainNav" class="domain-nav" aria-label="主题域目录"></nav>
+
+        <div class="source-note">
+          <span class="source-dot"></span>
+          <span><strong>目录数据已载入</strong><small>数据模型全.xlsx</small></span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">ENTERPRISE DATA CATALOG</p>
+            <h1>主题域数据目录</h1>
+            <p>按业务主题快速发现、筛选和查看部门数据表</p>
+          </div>
+          <button id="resetButton" class="reset-button" type="button" title="重置筛选" aria-label="重置筛选">
+            <svg viewBox="0 0 24 24"><path d="M4 4v6h6M20 20v-6h-6M5.6 15a7 7 0 0 0 11.7 2.3L20 14M4 10l2.7-3.3A7 7 0 0 1 18.5 9"/></svg>
+          </button>
+        </header>
+
+        <section class="hero">
+          <div class="hero-copy">
+            <span class="hero-label"><i></i> 数据资产总览</span>
+            <h2>让每一张表，都能被快速找到</h2>
+            <p>从一级主题域逐层探索业务对象，查看数据表的线上化、入湖状态与负责人信息。</p>
+            <span class="snapshot">目录快照 · <time id="snapshotDate"></time></span>
+          </div>
+          <div class="hero-orbit" aria-hidden="true">
+            <span class="ring ring-1"></span><span class="ring ring-2"></span><span class="ring ring-3"></span>
+            <div id="orbitDots"></div>
+            <div class="orbit-center"><strong id="heroTableTotal">0</strong><small>张数据表</small></div>
+          </div>
+        </section>
+
+        <section id="statGrid" class="stat-grid" aria-label="目录统计"></section>
+
+        <section class="catalog">
+          <div class="catalog-title-row">
+            <div>
+              <div class="catalog-title"><h2 id="catalogTitle">全部数据表</h2><b id="resultTotal">0 张</b></div>
+              <p id="catalogDescription">浏览全部主题域下的数据表</p>
+            </div>
+            <div class="view-toggle" aria-label="视图切换">
+              <button class="active" data-view="grid" type="button" aria-label="卡片视图">
+                <svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+              </button>
+              <button data-view="list" type="button" aria-label="列表视图">
+                <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <label class="search">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+              <input id="searchInput" type="search" placeholder="搜索中文表名、英文表名、业务对象…" />
+              <kbd>⌘ K</kbd>
+            </label>
+            <div id="statusFilters" class="status-filters">
+              <button class="active" data-status="all" type="button">全部</button>
+              <button data-status="online" type="button"><i class="green"></i>已线上化</button>
+              <button data-status="lake" type="button"><i class="blue"></i>已入湖</button>
+              <button data-status="pending" type="button"><i class="amber"></i>待完善</button>
+            </div>
+          </div>
+
+          <div id="subdomainNav" class="subdomain-nav"></div>
+          <div id="tableGrid" class="table-grid"></div>
+
+          <div id="emptyState" class="empty-state" hidden>
+            <span>⌕</span><h3>没有找到匹配的数据表</h3><p>换一个关键词或清除筛选条件再试试。</p>
+            <button id="emptyReset" type="button">清除筛选</button>
+          </div>
+
+          <div class="load-more-row"><button id="loadMore" type="button">加载更多</button></div>
+        </section>
+      </main>
+    </div>
+
+    <div id="drawerMask" class="drawer-mask" hidden></div>
+    <aside id="drawer" class="drawer" aria-hidden="true">
+      <div class="drawer-head">
+        <div><small>DATA TABLE DETAIL</small><h2 id="drawerTitle">数据表详情</h2></div>
+        <button id="drawerClose" type="button" aria-label="关闭详情">×</button>
+      </div>
+      <div id="drawerBody" class="drawer-body"></div>
+    </aside>
+
+    <script src="./src/data.js"></script>
+    <script src="./src/app.js"></script>
+  </body>
+</html>
