@@ -1,6 +1,18 @@
 # 东鹏数据地图 Demo
 
-这是一个纯静态单页 Demo，数据来自 `数据模型全.xlsx` 的“模型目录”工作表。
+这是一个逐步服务化中的数据地图 Demo。当前目录数据仍来自 `数据模型全.xlsx` 生成的静态文件，页面由 Node.js 后端统一提供。
+
+## 项目结构
+
+```text
+frontend/          当前页面、样式和静态目录数据
+backend/           API、静态资源服务和 PostgreSQL 连接管理
+db/migrations/     后续元数据仓库 migration
+deploy/            后续服务器与容器部署配置
+scripts/           现有 Excel 提取脚本（待改造成导入命令）
+```
+
+本轮只完成运行时代码的目录分层，不改变页面 URL、交互和 PostgreSQL 连接配置位置。`src/` 与 `server.mjs` 是早期原型，暂不参与当前启动流程，后续单独核对清理。
 
 ## 使用方式
 
@@ -35,4 +47,4 @@ npm start
 
 ## 更新数据
 
-当前 `data.js` 为从 Excel 生成的静态数据。Excel 更新后，需要重新生成该文件。
+当前 `frontend/data.js` 为从 Excel 生成的静态数据。Excel 更新后，需要重新生成该文件。

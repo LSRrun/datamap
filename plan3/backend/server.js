@@ -8,9 +8,10 @@ const { Client, Pool } = require("pg");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 58973);
-const ROOT = __dirname;
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const FRONTEND_ROOT = path.join(PROJECT_ROOT, "frontend");
 const MAX_BODY_BYTES = 16 * 1024;
-const DATA_DIR = path.join(ROOT, ".data");
+const DATA_DIR = path.join(PROJECT_ROOT, ".data");
 const CONNECTION_FILE = path.join(DATA_DIR, "postgres-connection.json");
 const KEYCHAIN_SERVICE = "com.dongpeng.datamap.postgres";
 const HEARTBEAT_INTERVAL_MS = 15 * 1000;
@@ -339,8 +340,8 @@ async function savePostgres(request, response) {
 
 function serveStatic(request, response, pathname) {
   const relativePath = pathname === "/" ? "index.html" : decodeURIComponent(pathname).replace(/^\/+/, "");
-  const filePath = path.resolve(ROOT, relativePath);
-  if (!filePath.startsWith(`${ROOT}${path.sep}`) && filePath !== ROOT) {
+  const filePath = path.resolve(FRONTEND_ROOT, relativePath);
+  if (!filePath.startsWith(`${FRONTEND_ROOT}${path.sep}`) && filePath !== FRONTEND_ROOT) {
     response.writeHead(403);
     response.end("Forbidden");
     return;
