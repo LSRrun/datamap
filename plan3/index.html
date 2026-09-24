@@ -14,7 +14,7 @@
       type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%235d5fef'/%3E%3Cstop offset='1' stop-color='%2309b8d1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 20h28v8H18zm0 12h18v8H18zm22 0h6v8h-6z' fill='white'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260924-3" />
   </head>
   <body>
     <div class="app-shell">
@@ -75,6 +75,10 @@
             <input id="searchInput" type="search" placeholder="搜索中文表名、英文表名、业务对象或负责人" autocomplete="off" />
             <kbd>⌘ K</kbd>
           </label>
+          <a class="settings-button" href="./settings.html" aria-label="打开系统设置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></svg>
+            设置
+          </a>
           <button class="help-button" type="button" id="showGuide">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M9.8 9a2.4 2.4 0 1 1 3.5 2.1c-.9.5-1.3 1.1-1.3 2M12 17h.01" /></svg>
             使用说明
@@ -165,6 +169,10 @@
               <div class="drawer-body" id="drawerBody"></div>
             </aside>
           </div>
+          <div class="map-resize-handle" id="mapResizeHandle" role="separator" aria-label="调整业务主题分布图高度"
+            aria-orientation="horizontal" aria-valuemin="420" aria-valuemax="1200" tabindex="0" title="向下拖动放大分布图">
+            <i aria-hidden="true"></i><span>拖动调整高度</span>
+          </div>
         </section>
 
         <section class="catalog-panel" id="catalog">
@@ -235,6 +243,13 @@
       </main>
     </div>
 
+    <div class="asset-drawer-layer" id="assetDrawerLayer" aria-hidden="true">
+      <button class="asset-drawer-scrim" id="assetDrawerScrim" type="button" aria-label="关闭数据表详情"></button>
+      <aside class="asset-drawer" id="assetDrawer" role="dialog" aria-modal="true" aria-labelledby="assetDrawerTitle">
+        <div class="asset-drawer-content" id="assetDrawerContent"></div>
+      </aside>
+    </div>
+
     <div class="guide-modal" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideTitle" hidden>
       <div class="guide-card">
         <button class="icon-button guide-close" id="closeGuide" aria-label="关闭使用说明">
@@ -252,6 +267,6 @@
     </div>
 
     <script src="./data.js"></script>
-    <script src="./app.js"></script>
+    <script src="./app.js?v=20260924-3"></script>
   </body>
 </html>

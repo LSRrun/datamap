@@ -12,6 +12,8 @@
     view: "cards",
     linkMode: "l3",
     related: null,
+    selectedTableId: null,
+    assetDetail: null,
     openGroups: new Set(),
     treeOpen: new Set(),
   };
@@ -48,6 +50,10 @@
     drawer: document.getElementById("detailDrawer"),
     drawerBody: document.getElementById("drawerBody"),
     drawerDomain: document.getElementById("drawerDomain"),
+    assetDrawerLayer: document.getElementById("assetDrawerLayer"),
+    assetDrawer: document.getElementById("assetDrawer"),
+    assetDrawerContent: document.getElementById("assetDrawerContent"),
+    assetDrawerScrim: document.getElementById("assetDrawerScrim"),
     sidebar: document.getElementById("sidebar"),
     sidebarScrim: document.getElementById("sidebarScrim"),
     guideModal: document.getElementById("guideModal"),
@@ -219,8 +225,10 @@
   function tableCard(table) {
     const domain = domainByName.get(table.domain) || { color: "#5a5feb" };
     const english = table.englishName ? escapeHtml(table.englishName) : "英文表名待完善";
+    const selected = state.selectedTableId === String(table.id);
     return `
-      <button class="table-card" type="button" data-table-id="${table.id}" style="--card-color:${domain.color}">
+      <button class="table-card ${selected ? "is-selected" : ""}" type="button" data-table-id="${table.id}"
+        aria-pressed="${selected}" style="--card-color:${domain.color}">
         <span class="card-top">
           <h4 title="${escapeHtml(table.name)}">${escapeHtml(table.name)}</h4>
           <span class="open-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg></span>
@@ -272,7 +280,7 @@
 
     els.emptyState.hidden = tables.length !== 0;
     els.catalogGroups.hidden = tables.length === 0;
-    document.querySelectorAll("[data-table-id]").forEach((button) => button.addEventListener("click", () => openDrawer(button.dataset.tableId)));
+    document.querySelectorAll("[data-table-id]").forEach((button) => button.addEventListener("click", () => openAssetDrawer(button.dataset.tableId)));
     document.querySelectorAll("[data-group]").forEach((button) => button.addEventListener("click", () => {
       const key = button.dataset.group;
       state.openGroups.has(key) ? state.openGroups.delete(key) : state.openGroups.add(key);
@@ -281,6 +289,7 @@
     renderActiveFilters();
     updateMapCaption(tables);
     syncStatusControls();
+    syncSelectedTableCard();
   }
 
   function renderActiveFilters() {
@@ -405,9 +414,205 @@
     selectDomain("all");
   }
 
+  function syncSelectedTableCard() {
+    document.querySelectorAll("[data-table-id]").forEach((card) => {
+      const selected = card.dataset.tableId === state.selectedTableId;
+      card.classList.toggle("is-selected", selected);
+      card.setAttribute("aria-pressed", String(selected));
+      card.style.border = selected ? "2px solid #5a5feb" : "";
+      card.style.boxShadow = selected ? "0 14px 32px rgba(45,50,160,.20)" : "";
+      card.style.background = selected ? "#f5f5ff" : "";
+    });
+  }
+
+  function physicalTableNames(table) {
+    const raw = String(table.englishName || "").trim();
+    if (!raw) return [];
+    let names = raw.split(/[、，,；;\n]+/).map((name) => name.trim()).filter(Boolean);
+    if (names.length === 1 && /^[A-Za-z0-9_.]+\/[A-Za-z0-9_.]+$/.test(raw)) {
+      names = raw.split("/").map((name) => name.trim()).filter(Boolean);
+    }
+    return [...new Set(names)];
+  }
+
+  function tableLayer(name) {
+    const value = String(name || "").toUpperCase();
+    if (!value) return "层级待完善";
+    if (/(^|\.)DWI_/.test(value)) return "DWI 贴源层";
+    if (/(^|\.)DWR_/.test(value)) return "DWR 明细层";
+    if (/(^|\.)DM_/.test(value)) return "DM 数据集市";
+    if (/(^|\.)ODS_/.test(value)) return "ODS 贴源层";
+    return "层级待完善";
+  }
+
+  function renderAssetDrawer() {
+    if (!state.assetDetail) return;
+    const table = tableById.get(String(state.assetDetail.tableId));
+    if (!table) return;
+    const names = physicalTableNames(table);
+    const maxIndex = Math.max(names.length - 1, 0);
+    state.assetDetail.physicalIndex = Math.min(Math.max(state.assetDetail.physicalIndex || 0, 0), maxIndex);
+    const activeIndex = state.assetDetail.physicalIndex;
+    const activeName = names[activeIndex] || "英文表名待完善";
+    const hasMultiple = names.length > 1;
+    const domain = domainByName.get(table.domain) || { color: "#5a5feb" };
+    const tableOptions = hasMultiple ? `
+      <section class="physical-switcher" aria-label="物理表切换">
+        <div class="physical-switcher-head">
+          <strong>包含 ${names.length} 张物理表</strong>
+          <span>${activeIndex + 1} / ${names.length}</span>
+        </div>
+        <div class="physical-table-options" role="tablist" aria-label="选择物理表">
+          ${names.map((name, index) => `
+            <button class="physical-table-option ${index === activeIndex ? "is-active" : ""}" type="button"
+              role="tab" aria-selected="${index === activeIndex}" data-physical-index="${index}" title="${escapeHtml(name)}">
+              <span>表 ${index + 1}</span><code>${escapeHtml(name)}</code>
+            </button>
+          `).join("")}
+        </div>
+        <div class="physical-switch-actions">
+          <button type="button" data-physical-step="-1" ${activeIndex === 0 ? "disabled" : ""}>← 上一张</button>
+          <button type="button" data-physical-step="1" ${activeIndex === names.length - 1 ? "disabled" : ""}>下一张 →</button>
+        </div>
+      </section>
+    ` : "";
+
+    els.assetDrawer.style.setProperty("--asset-color", domain.color);
+    els.assetDrawerContent.innerHTML = `
+      <header class="asset-drawer-header">
+        <div class="asset-heading-row">
+          <div>
+            <span class="asset-domain"><i></i>${escapeHtml(table.domain)}</span>
+            <h2 id="assetDrawerTitle">${escapeHtml(table.name)}</h2>
+          </div>
+          <button class="asset-drawer-close" type="button" data-close-asset-drawer aria-label="关闭数据表详情">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+        </div>
+        <p class="asset-breadcrumb">${escapeHtml(table.domain)}<b>›</b>${escapeHtml(table.topic || "待分类")}<b>›</b>${escapeHtml(table.businessObject || "待完善")}</p>
+        <div class="asset-table-name">
+          <code class="${names.length ? "" : "is-empty"}">${escapeHtml(activeName)}</code>
+          <button type="button" data-copy-table-name ${names.length ? "" : "disabled"} aria-label="复制英文表名">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg>
+            <span>复制</span>
+          </button>
+        </div>
+      </header>
+      <div class="asset-drawer-body">
+        ${tableOptions}
+        <div class="asset-badges">
+          <span class="status-chip ${statusClass(table.online)}">${statusLabel(table.online, "online")}</span>
+          <span class="status-chip ${statusClass(table.inLake)}">${statusLabel(table.inLake, "lake")}</span>
+          <span class="asset-outline-chip">${escapeHtml(tableLayer(activeName))}</span>
+        </div>
+
+        <section class="asset-section">
+          <h3>资产信息</h3>
+          <dl class="asset-info-grid">
+            <div><dt>L2 主题域</dt><dd>${escapeHtml(table.topic || "待完善")}</dd></div>
+            <div><dt>L3 业务对象</dt><dd>${escapeHtml(table.businessObject || "待完善")}</dd></div>
+            <div><dt>模型负责人</dt><dd>${escapeHtml(table.owner || "待完善")}</dd></div>
+            <div><dt>上线时间</dt><dd>${escapeHtml(table.launchDate || "待完善")}</dd></div>
+            <div><dt>目录序号</dt><dd>#${escapeHtml(table.sourceRow || table.id)}</dd></div>
+            <div><dt>物理表数量</dt><dd>${Math.max(names.length, 1)} 张</dd></div>
+          </dl>
+        </section>
+
+        <section class="asset-section">
+          <h3>资产说明</h3>
+          <p class="asset-description">${escapeHtml(table.description || "当前目录暂未维护该数据表的资产说明。")}</p>
+        </section>
+
+        <section class="asset-section">
+          <div class="asset-section-title"><h3>字段结构</h3><span>当前物理表</span></div>
+          <div class="asset-empty-fields">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M9 5v14"/></svg>
+            <strong>字段信息尚未维护</strong>
+            <span>后续接入元数据平台后，可在这里展示字段名、类型及说明。</span>
+          </div>
+        </section>
+
+        <section class="asset-section">
+          <h3>归属与责任</h3>
+          <dl class="asset-owner-list">
+            <div><dt>所属一级主题域</dt><dd>${escapeHtml(table.domain)}</dd></div>
+            <div><dt>责任人</dt><dd>${escapeHtml(table.owner || "待完善")}</dd></div>
+            <div><dt>数据来源</dt><dd>部门数据模型目录</dd></div>
+          </dl>
+        </section>
+      </div>
+      <footer class="asset-drawer-footer">
+        <button type="button" class="asset-secondary-action" data-copy-table-name ${names.length ? "" : "disabled"}>复制表名</button>
+        <button type="button" class="asset-primary-action" data-close-asset-drawer>关闭详情</button>
+      </footer>
+    `;
+
+    els.assetDrawerContent.querySelectorAll("[data-close-asset-drawer]").forEach((button) => {
+      button.addEventListener("click", () => closeAssetDrawer());
+    });
+    els.assetDrawerContent.querySelectorAll("[data-physical-index]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.assetDetail.physicalIndex = Number(button.dataset.physicalIndex);
+        renderAssetDrawer();
+      });
+    });
+    els.assetDrawerContent.querySelectorAll("[data-physical-step]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.assetDetail.physicalIndex += Number(button.dataset.physicalStep);
+        renderAssetDrawer();
+      });
+    });
+    els.assetDrawerContent.querySelectorAll("[data-copy-table-name]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        if (!names.length) return;
+        try {
+          await navigator.clipboard.writeText(activeName);
+          els.assetDrawerContent.querySelectorAll("[data-copy-table-name]").forEach((copyButton) => {
+            const label = copyButton.querySelector("span");
+            if (label) label.textContent = "已复制";
+            else copyButton.textContent = "已复制";
+          });
+        } catch (_) {
+          window.prompt("复制表名", activeName);
+        }
+      });
+    });
+  }
+
+  function openAssetDrawer(id) {
+    const table = tableById.get(String(id));
+    if (!table) return;
+    els.drawer.classList.remove("is-open");
+    els.drawer.setAttribute("aria-hidden", "true");
+    state.selectedTableId = String(table.id);
+    state.assetDetail = { tableId: String(table.id), physicalIndex: 0 };
+    syncSelectedTableCard();
+    dataMap.selectTable(table.id);
+    renderAssetDrawer();
+    els.assetDrawerLayer.classList.add("is-open");
+    els.assetDrawerLayer.setAttribute("aria-hidden", "false");
+    document.body.classList.add("asset-drawer-open");
+    requestAnimationFrame(() => els.assetDrawerContent.querySelector("[data-close-asset-drawer]")?.focus());
+  }
+
+  function closeAssetDrawer(options = {}) {
+    state.assetDetail = null;
+    els.assetDrawerLayer.classList.remove("is-open");
+    els.assetDrawerLayer.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("asset-drawer-open");
+    if (!options.preserveSelection) {
+      state.selectedTableId = null;
+      dataMap.selectTable(null);
+      syncSelectedTableCard();
+    }
+  }
+
   function openDrawer(id) {
     const table = tableById.get(String(id));
     if (!table) return;
+    closeAssetDrawer({ preserveSelection: true });
+    state.selectedTableId = String(table.id);
+    syncSelectedTableCard();
     dataMap.selectTable(table.id);
     const domain = domainByName.get(table.domain) || { color: "#5a5feb" };
     const sameL3Count = dataset.tables.filter((item) =>
@@ -471,6 +676,7 @@
   }
 
   function closeDrawer() {
+    state.selectedTableId = null;
     els.drawer.classList.remove("is-open");
     els.drawer.setAttribute("aria-hidden", "true");
     dataMap.selectTable(null);
@@ -478,11 +684,77 @@
       state.related = null;
       renderCatalog();
     }
+    syncSelectedTableCard();
   }
 
   function openSidebar() { els.sidebar.classList.add("is-open"); els.sidebarScrim.classList.add("is-open"); }
   function closeSidebar() { els.sidebar.classList.remove("is-open"); els.sidebarScrim.classList.remove("is-open"); }
   function closeGuide() { els.guideModal.hidden = true; }
+
+  function initMapResizer() {
+    const stage = document.getElementById("mapStage");
+    const handle = document.getElementById("mapResizeHandle");
+    const storageKey = "datamap.map.height.v1";
+    const minHeight = 420;
+    const maxHeight = 1200;
+    let startY = 0;
+    let startHeight = 0;
+    let activePointer = null;
+
+    function clampHeight(value) {
+      return Math.min(maxHeight, Math.max(minHeight, Math.round(value)));
+    }
+
+    function applyHeight(value, persist = false) {
+      const height = clampHeight(value);
+      stage.style.height = `${height}px`;
+      handle.setAttribute("aria-valuenow", String(height));
+      handle.setAttribute("aria-valuetext", `${height} 像素`);
+      if (persist) localStorage.setItem(storageKey, String(height));
+    }
+
+    const savedHeight = Number(localStorage.getItem(storageKey));
+    if (Number.isFinite(savedHeight) && savedHeight >= minHeight) applyHeight(savedHeight);
+    else requestAnimationFrame(() => applyHeight(stage.getBoundingClientRect().height));
+
+    handle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      activePointer = event.pointerId;
+      startY = event.clientY;
+      startHeight = stage.getBoundingClientRect().height;
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add("is-dragging");
+      document.body.classList.add("is-resizing-map");
+    });
+
+    handle.addEventListener("pointermove", (event) => {
+      if (activePointer !== event.pointerId) return;
+      applyHeight(startHeight + event.clientY - startY);
+    });
+
+    function finishResize(event) {
+      if (activePointer !== event.pointerId) return;
+      activePointer = null;
+      handle.classList.remove("is-dragging");
+      document.body.classList.remove("is-resizing-map");
+      applyHeight(stage.getBoundingClientRect().height, true);
+    }
+
+    handle.addEventListener("pointerup", finishResize);
+    handle.addEventListener("pointercancel", finishResize);
+    handle.addEventListener("keydown", (event) => {
+      const step = event.shiftKey ? 100 : 40;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        applyHeight(stage.getBoundingClientRect().height + direction * step, true);
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        applyHeight(minHeight, true);
+      }
+    });
+  }
 
   const dataMap = (() => {
     const canvas = document.getElementById("dataMap");
@@ -819,6 +1091,22 @@
     };
   })();
 
+  function selectTreeTable(table) {
+    state.domain = table.domain;
+    state.topic = table.topic || "all";
+    state.businessObject = table.businessObject || "all";
+    state.query = "";
+    state.online = "all";
+    state.lake = "all";
+    state.related = null;
+    els.searchInput.value = "";
+    renderNavigation();
+    renderCatalog();
+    openDrawer(table.id);
+    dataMap.focusTable(table.id);
+    closeSidebar();
+  }
+
   function bindControls() {
     document.querySelector('.domain-nav-item[data-domain="all"]').addEventListener("click", () => selectDomain("all"));
     els.collapseAllTree.addEventListener("click", () => {
@@ -830,10 +1118,7 @@
       if (leaf) {
         const table = tableById.get(String(leaf.dataset.treeTable));
         if (!table) return;
-        selectDomain(table.domain, { focus: false, closeMobile: false });
-        openDrawer(table.id);
-        dataMap.focusTable(table.id);
-        closeSidebar();
+        selectTreeTable(table);
         return;
       }
       const row = event.target.closest("[data-tree-toggle]");
@@ -871,6 +1156,7 @@
     document.getElementById("mapZoomIn").addEventListener("click", () => dataMap.zoomBy(1.18));
     document.getElementById("mapZoomOut").addEventListener("click", () => dataMap.zoomBy(.84));
     document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
+    els.assetDrawerScrim.addEventListener("click", () => closeAssetDrawer());
     document.getElementById("openSidebar").addEventListener("click", openSidebar);
     document.getElementById("closeSidebar").addEventListener("click", closeSidebar);
     els.sidebarScrim.addEventListener("click", closeSidebar);
@@ -880,12 +1166,13 @@
     els.guideModal.addEventListener("click", (event) => { if (event.target === els.guideModal) closeGuide(); });
     document.addEventListener("keydown", (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); els.searchInput.focus(); }
-      if (event.key === "Escape") { closeDrawer(); closeSidebar(); closeGuide(); }
+      if (event.key === "Escape") { closeAssetDrawer(); closeDrawer(); closeSidebar(); closeGuide(); }
     });
   }
 
   renderNavigation();
   renderMetrics();
   bindControls();
+  initMapResizer();
   renderCatalog();
 })();

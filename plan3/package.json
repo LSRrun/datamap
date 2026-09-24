@@ -2,9 +2,11 @@
   "name": "dongpeng-data-map-demo",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
+  "description": "东鹏数据地图演示及 PostgreSQL 数据源连接配置",
   "scripts": {
-    "dev": "node server.mjs",
-    "start": "node server.mjs"
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "pg": "^8.0.0"
   }
 }

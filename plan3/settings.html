@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="东鹏数据地图数据库连接设置" />
+    <meta name="theme-color" content="#f4f7fb" />
+    <title>数据库连接设置 · 东鹏数据地图</title>
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%235d5fef'/%3E%3Cstop offset='1' stop-color='%2309b8d1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 20h28v8H18zm0 12h18v8H18zm22 0h6v8h-6z' fill='white'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./settings.css?v=20260924-1" />
+  </head>
+  <body>
+    <header class="settings-topbar">
+      <a class="settings-brand" href="./index.html" aria-label="返回数据地图">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>东鹏数据地图</strong><small>DATA CATALOG</small></span>
+      </a>
+      <a class="back-map" href="./index.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+        返回数据地图
+      </a>
+    </header>
+
+    <main class="settings-main">
+      <section class="settings-heading">
+        <div>
+          <span>DATA SOURCE SETTINGS</span>
+          <h1>系统设置</h1>
+          <p>管理数据地图的数据源连接。保存后将持续连接 PostgreSQL，并在服务重启后自动恢复。</p>
+        </div>
+        <div class="service-state" id="serviceState"><i></i><span>等待配置</span></div>
+      </section>
+
+      <div class="settings-layout">
+        <aside class="settings-nav" aria-label="设置分类">
+          <div class="settings-nav-title">设置中心</div>
+          <button class="settings-nav-item is-active" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" /></svg>
+            <span><strong>数据库连接</strong><small>配置数据源访问参数</small></span>
+          </button>
+          <button class="settings-nav-item" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 4v6M4 17h16M17 14v6" /></svg>
+            <span><strong>同步设置</strong><small>后续开放</small></span>
+          </button>
+          <button class="settings-nav-item" type="button" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5" /></svg>
+            <span><strong>元数据采集</strong><small>后续开放</small></span>
+          </button>
+
+          <div class="settings-security-note">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.8 8 7 10 4.2-2 7-5.4 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
+            <div><strong>凭据保护</strong><p>密码保存在 macOS 钥匙串中，不会写入浏览器或项目配置文件。</p></div>
+          </div>
+        </aside>
+
+        <section class="connection-workspace">
+          <div class="connection-card">
+            <header class="connection-header">
+              <div class="postgres-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" /></svg>
+              </div>
+              <div>
+                <div class="connection-title-row"><h2>PostgreSQL</h2><span>已支持</span></div>
+                <p>填写数据库连接参数。保存成功后服务会保持连接，并在连接中断时自动重连。</p>
+              </div>
+            </header>
+
+            <form id="postgresForm" novalidate>
+              <div class="form-section">
+                <div class="form-section-heading"><h3>基本信息</h3><p>用于识别这条连接，不影响数据库本身。</p></div>
+                <div class="form-grid">
+                  <label class="field field-wide">
+                    <span>连接名称 <b>*</b></span>
+                    <input id="connectionName" name="connectionName" type="text" maxlength="60" value="数据地图 PostgreSQL" required />
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <div class="form-section-heading"><h3>连接参数</h3><p>请确保运行数据地图的电脑可以访问该数据库地址。</p></div>
+                <div class="form-grid">
+                  <label class="field field-host">
+                    <span>主机地址 <b>*</b></span>
+                    <input id="host" name="host" type="text" placeholder="例如：127.0.0.1 或 db.example.com" autocomplete="off" required />
+                  </label>
+                  <label class="field field-port">
+                    <span>端口 <b>*</b></span>
+                    <input id="port" name="port" type="number" min="1" max="65535" value="5432" required />
+                  </label>
+                  <label class="field">
+                    <span>数据库名 <b>*</b></span>
+                    <input id="database" name="database" type="text" placeholder="例如：data_warehouse" autocomplete="off" required />
+                  </label>
+                  <label class="field">
+                    <span>默认 Schema</span>
+                    <input id="schema" name="schema" type="text" value="public" placeholder="public" autocomplete="off" />
+                  </label>
+                  <label class="field">
+                    <span>用户名 <b>*</b></span>
+                    <input id="username" name="username" type="text" placeholder="数据库用户名" autocomplete="username" required />
+                  </label>
+                  <label class="field">
+                    <span>密码</span>
+                    <span class="password-field">
+                      <input id="password" name="password" type="password" placeholder="数据库密码（如有）" autocomplete="current-password" />
+                      <button id="togglePassword" type="button" aria-label="显示密码">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></svg>
+                      </button>
+                    </span>
+                  </label>
+                  <label class="field">
+                    <span>SSL 模式</span>
+                    <select id="sslMode" name="sslMode">
+                      <option value="disable">不使用 SSL</option>
+                      <option value="verify">使用 SSL 并验证证书</option>
+                      <option value="require">使用 SSL，不验证证书</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>连接超时</span>
+                    <select id="timeout" name="timeout">
+                      <option value="5">5 秒</option>
+                      <option value="10" selected>10 秒</option>
+                      <option value="20">20 秒</option>
+                      <option value="30">30 秒</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="form-message" id="formMessage" role="status" aria-live="polite" hidden></div>
+
+              <div class="form-actions">
+                <button class="test-button" id="testConnection" type="button">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5h8M9 5v5l-4 7a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 17l-4-7V5" /><path d="M7 16h10" /></svg>
+                  测试连接
+                </button>
+                <button class="save-button" id="saveConnection" type="submit">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l2 2v14H5zM8 4v6h8V4M8 20v-6h8v6" /></svg>
+                  保存并保持连接
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <aside class="saved-panel">
+            <div class="saved-panel-heading"><span>当前配置</span><strong id="savedStatus">尚未保存</strong></div>
+            <div class="saved-empty" id="savedEmpty">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" /></svg>
+              <p>填写并保存后，将在这里显示连接摘要。</p>
+            </div>
+            <dl class="saved-summary" id="savedSummary" hidden>
+              <div><dt>连接名称</dt><dd id="summaryName">—</dd></div>
+              <div><dt>数据库地址</dt><dd id="summaryAddress">—</dd></div>
+              <div><dt>数据库</dt><dd id="summaryDatabase">—</dd></div>
+              <div><dt>Schema</dt><dd id="summarySchema">—</dd></div>
+              <div><dt>连接状态</dt><dd id="summaryConnection">—</dd></div>
+              <div><dt>最近检查</dt><dd id="summaryTested">—</dd></div>
+            </dl>
+          </aside>
+        </section>
+      </div>
+    </main>
+
+    <script src="./settings.js?v=20260924-2"></script>
+  </body>
+</html>
