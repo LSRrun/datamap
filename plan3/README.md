@@ -25,6 +25,89 @@ npm start
 
 然后访问 `http://127.0.0.1:58973/`。数据库连接测试需要通过该服务运行；直接双击 HTML 时只能查看页面，不能测试 PostgreSQL 连接。
 
+元数据管理页面位于 `http://127.0.0.1:58973/metadata.html`，也可以从数据地图顶部的“元数据管理”按钮进入。该页面读取 `CATALOG_DB`，支持搜索、状态筛选、分页、排序，以及编辑 L1/L2/L3、中文表名、负责人、说明、线上化、入湖和敏感等级。每条已登记物理表的资产都可通过“字段结构”查看同步后的字段明细；一个资产关联多张物理表时可在弹窗内切换。物理表名由同步流程维护，页面中仅供查看。
+
+数据表详情侧边栏提供“表数据查询”。查询目标必须来自 `CATALOG_DB` 中该资产已登记的物理表，浏览器不能提交 SQL 或任意表名；服务端使用已保存的只读业务 PostgreSQL 连接执行分页查询，默认每页 20 行、单次最多 100 行，并设置查询超时。
+
+字段结构来自 `CATALOG_DB`，不在打开侧边栏时临时扫描业务库。执行字段同步后，侧边栏会按当前物理表展示字段顺序、字段名、类型、可空性、主键和字段备注。
+
+## 元数据仓库 migration
+
+校验 migration 文件但不连接数据库：
+
+```bash
+npm run db:migrate -- --dry-run
+```
+
+配置独立元数据 PostgreSQL 后执行：
+
+```bash
+CATALOG_DATABASE_URL='postgresql://user:password@host:5432/datamap_catalog' npm run db:migrate
+```
+
+此连接只用于 `CATALOG_DB`，不得填写现有只读业务数据源。已执行 migration 的版本和校验值记录在 `catalog_schema_migrations` 表中。
+
+当前 macOS 本地开发环境已创建独立的 PostgreSQL 15 数据库：
+
+```text
+数据库：datamap_catalog
+所有者：datamap_catalog_app
+地址：127.0.0.1:5432
+```
+
+本机执行 migration 时使用：
+
+```bash
+CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog' npm run db:migrate
+```
+
+该无密码连接仅适用于当前本机开发实例。服务器环境必须使用独立密码或密钥服务，不能照搬本地认证方式。
+
+## Excel 目录导入
+
+导入脚本需要 Python 3 和 `openpyxl`：
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+先执行预检，只解析工作簿并生成报告，不写数据库：
+
+```bash
+PYTHON_BIN=python3 npm run import:catalog -- '/path/to/数据模型全.xlsx' --dry-run
+```
+
+确认报告后导入本机元数据仓库：
+
+```bash
+PYTHON_BIN=python3 \
+CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog' \
+npm run import:catalog -- '/path/to/数据模型全.xlsx'
+```
+
+导入报告保存在 `.data/catalog-import-report.json`。脚本会按 L1/L2/L3/L4 层级补全合并单元格产生的空白，拆分一个单元格中的多个物理表名，并使用数据源设置中的默认 Schema 补全未写 Schema 的表名。重复物理表只保留第一次出现的主关联，并在报告中列出冲突。重复执行不会覆盖人工维护的负责人、说明和分类。
+
+## PostgreSQL 字段结构同步
+
+先执行最新 migration，再预检当前数据源中可匹配的物理表和字段：
+
+```bash
+CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog' \
+npm run db:migrate
+
+CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog' \
+npm run sync:catalog -- --dry-run
+```
+
+确认预检结果后正式同步：
+
+```bash
+CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog' \
+npm run sync:catalog
+```
+
+同步脚本只读取业务 PostgreSQL 的 `pg_catalog` 和 `information_schema`，将表、字段、类型、主键、备注、结构指纹和在线状态写入元数据仓库。macOS 本地密码从钥匙串读取，不会写入报告；结果保存在 `.data/catalog-sync-report.json`。
+
 ## 功能
 
 - L1 → L2 → L3 → L4 四级可展开目录树
@@ -43,6 +126,8 @@ npm start
 - 顶部“设置”进入数据库连接页，支持测试并持久保存 PostgreSQL 连接
 - 保存后由本机服务端连接池持续保持连接，每 15 秒执行心跳检查，断线后自动重连，服务重启后自动恢复
 - PostgreSQL 密码保存在 macOS 钥匙串中；`.data/postgres-connection.json` 仅保存非敏感连接参数，且不会写入浏览器存储
+- 数据表详情支持从已连接 PostgreSQL 只读分页查询当前物理表，并可在侧边栏中翻页、刷新和横向查看字段
+- 字段同步后，详情侧边栏自动展示当前物理表的字段名、类型、可空性、主键和字段备注
 - 桌面和移动端响应式布局
 
 ## 更新数据

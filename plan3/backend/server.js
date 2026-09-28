@@ -5,6 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { Client, Pool } = require("pg");
+const { createCatalogApi } = require("./catalog-api");
+const { createTablePreviewApi } = require("./table-preview-api");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 58973);
@@ -27,6 +29,8 @@ const MIME_TYPES = {
 let savedConfig = null;
 let activePool = null;
 let heartbeatTimer = null;
+const catalogApi = createCatalogApi();
+const tablePreviewApi = createTablePreviewApi({ catalogApi, getSourcePool });
 let connectionState = {
   status: "not_configured",
   lastConnectedAt: null,
@@ -288,6 +292,18 @@ function startHeartbeat() {
   heartbeatTimer.unref?.();
 }
 
+async function getSourcePool() {
+  if (activePool) return activePool;
+  if (!savedConfig) return null;
+  try {
+    await activateConnection({ ...savedConfig, password: readCredential(savedConfig) }, null);
+    return activePool;
+  } catch (error) {
+    markDisconnected(error);
+    return null;
+  }
+}
+
 async function testPostgres(request, response) {
   let client;
   try {
@@ -364,6 +380,8 @@ function serveStatic(request, response, pathname) {
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || `${HOST}:${PORT}`}`);
+  if (await tablePreviewApi.handle(request, response, url)) return;
+  if (await catalogApi.handle(request, response, url)) return;
   if (request.method === "POST" && url.pathname === "/api/postgres/test") {
     await testPostgres(request, response);
     return;
@@ -397,6 +415,7 @@ startHeartbeat();
 async function shutdown() {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   if (activePool) await activePool.end().catch(() => {});
+  await catalogApi.close().catch(() => {});
   server.close(() => process.exit(0));
 }
 

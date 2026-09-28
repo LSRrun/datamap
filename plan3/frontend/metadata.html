@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="东鹏数据地图元数据管理" />
+    <meta name="theme-color" content="#f4f7fb" />
+    <title>元数据管理 · 东鹏数据地图</title>
+    <link rel="stylesheet" href="./metadata.css?v=20260928-2" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="./index.html" aria-label="返回数据地图">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span><strong>东鹏数据地图</strong><small>METADATA CATALOG</small></span>
+      </a>
+      <nav class="header-actions" aria-label="页面导航">
+        <a href="./index.html">数据地图</a>
+        <a href="./settings.html">数据源设置</a>
+      </nav>
+    </header>
+
+    <main class="page-shell">
+      <section class="page-heading">
+        <div>
+          <span class="eyebrow">CATALOG MANAGEMENT</span>
+          <h1>元数据管理</h1>
+          <p>查看并维护业务元数据，同时查看已同步的物理表与字段结构。</p>
+        </div>
+        <button class="secondary-button" id="refreshButton" type="button">刷新数据</button>
+      </section>
+
+      <section class="summary-grid" aria-label="元数据统计">
+        <article><span>逻辑资产</span><strong id="summaryAssets">—</strong><small>当前 L4 表项</small></article>
+        <article><span>物理表</span><strong id="summaryPhysical">—</strong><small>已登记物理对象</small></article>
+        <article><span>一级主题域</span><strong id="summaryDomains">—</strong><small>含资产主题域</small></article>
+        <article><span>字段元数据</span><strong id="summaryColumns">—</strong><small>已同步有效字段</small></article>
+      </section>
+
+      <section class="catalog-panel">
+        <div class="toolbar">
+          <label class="search-control">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 4 4"/></svg>
+            <input id="searchInput" type="search" placeholder="搜索中文名、资产编码、物理表、负责人或目录" autocomplete="off" />
+          </label>
+          <label><span>线上化</span><select id="onlineFilter"><option value="">全部</option><option>是</option><option>否</option><option>待确认</option></select></label>
+          <label><span>入湖</span><select id="lakeFilter"><option value="">全部</option><option>是</option><option>否</option><option>待确认</option></select></label>
+          <label><span>排序</span><select id="sortSelect"><option value="sourceRow:asc">Excel 行号</option><option value="name:asc">中文名 A–Z</option><option value="updatedAt:desc">最近更新</option></select></label>
+        </div>
+
+        <div class="table-status" id="tableStatus">正在加载元数据…</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>数据表</th><th>业务目录</th><th>物理表</th><th>负责人</th><th>状态</th><th>最近更新</th><th>操作</th></tr></thead>
+            <tbody id="metadataRows"></tbody>
+          </table>
+          <div class="empty-state" id="emptyState" hidden><strong>没有匹配的元数据</strong><span>请调整搜索条件或筛选项。</span></div>
+        </div>
+
+        <footer class="pagination">
+          <span id="pageSummary">—</span>
+          <div><button id="previousPage" type="button">上一页</button><span id="pageNumber">1 / 1</span><button id="nextPage" type="button">下一页</button></div>
+        </footer>
+      </section>
+    </main>
+
+    <dialog id="editDialog">
+      <form id="editForm" method="dialog">
+        <div class="dialog-heading">
+          <div><span>EDIT METADATA</span><h2>编辑业务元数据</h2><p id="editIdentity"></p></div>
+          <button class="close-button" id="closeDialog" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="form-grid">
+          <label class="wide"><span>中文表名 *</span><input name="nameCn" maxlength="255" required /></label>
+          <label><span>L1 主题域 *</span><input name="l1Domain" maxlength="255" required /></label>
+          <label><span>L2 主题域 *</span><input name="l2Topic" maxlength="255" required /></label>
+          <label><span>L3 业务对象 *</span><input name="l3Object" maxlength="255" required /></label>
+          <label><span>负责人</span><input name="owner" maxlength="120" /></label>
+          <label><span>线上化</span><select name="onlineStatus"><option value="">未设置</option><option>是</option><option>否</option><option>待确认</option></select></label>
+          <label><span>入湖</span><select name="lakeStatus"><option value="">未设置</option><option>是</option><option>否</option><option>待确认</option></select></label>
+          <label><span>敏感等级</span><select name="sensitivityLevel"><option value="">未设置</option><option>内部</option><option>敏感</option><option>高敏</option></select></label>
+          <label class="wide"><span>业务说明</span><textarea name="description" maxlength="4000" rows="4"></textarea></label>
+          <div class="wide readonly-block"><span>关联物理表（只读）</span><div id="editPhysicalTables"></div></div>
+        </div>
+        <div class="form-message" id="formMessage" aria-live="polite"></div>
+        <div class="dialog-actions"><button class="secondary-button" id="cancelEdit" type="button">取消</button><button class="primary-button" id="saveEdit" type="submit">保存元数据</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="fields-dialog" id="fieldsDialog" aria-labelledby="fieldsDialogTitle">
+      <section class="fields-dialog-panel">
+        <div class="dialog-heading fields-dialog-heading">
+          <div><span>TECHNICAL METADATA</span><h2 id="fieldsDialogTitle">字段结构</h2><p id="fieldsIdentity"></p></div>
+          <button class="close-button" id="closeFieldsDialog" type="button" aria-label="关闭字段结构">×</button>
+        </div>
+        <div class="physical-tabs" id="fieldsPhysicalTabs" aria-label="物理表切换"></div>
+        <div class="fields-toolbar">
+          <div id="fieldsTableStatus">选择物理表查看字段</div>
+          <button class="secondary-button" id="refreshFields" type="button">刷新字段</button>
+        </div>
+        <div class="fields-table-wrap">
+          <table class="fields-table">
+            <thead><tr><th>#</th><th>字段名</th><th>数据类型</th><th>主键</th><th>可空</th><th>默认值</th><th>字段备注</th><th>敏感等级</th></tr></thead>
+            <tbody id="fieldsRows"></tbody>
+          </table>
+          <div class="fields-empty" id="fieldsEmpty" hidden><strong>暂未同步到字段结构</strong><span>请确认物理表在线，并重新执行字段同步。</span></div>
+        </div>
+      </section>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./metadata.js?v=20260928-2"></script>
+  </body>
+</html>

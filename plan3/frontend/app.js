@@ -445,6 +445,198 @@
     return "层级待完善";
   }
 
+  function assetCodeFor(table) {
+    const sourceRow = Number(table.sourceRow);
+    if (!Number.isInteger(sourceRow) || sourceRow < 1) return "";
+    return `excel:model-directory:${String(sourceRow).padStart(4, "0")}`;
+  }
+
+  function renderPreviewValue(value) {
+    if (value === null) return '<span class="preview-null">NULL</span>';
+    return escapeHtml(value);
+  }
+
+  function renderFieldStructure(names) {
+    if (!names.length) {
+      return `
+        <div class="asset-empty-fields">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M9 5v14"/></svg>
+          <strong>暂无可同步的物理表</strong>
+          <span>请先为该资产补充英文物理表名。</span>
+        </div>
+      `;
+    }
+    const fields = state.assetDetail?.fields || { status: "loading" };
+    if (fields.status === "loading") {
+      return '<div class="field-structure-loading"><i></i><span>正在读取字段元数据…</span></div>';
+    }
+    if (fields.status === "error") {
+      return `
+        <div class="field-structure-error" role="alert">
+          <strong>字段结构读取失败</strong>
+          <span>${escapeHtml(fields.message || "请稍后重试")}</span>
+          <button type="button" data-reload-fields>重新读取</button>
+        </div>
+      `;
+    }
+    const columns = fields.data?.columns || [];
+    if (!columns.length) {
+      return `
+        <div class="asset-empty-fields">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M9 5v14"/></svg>
+          <strong>暂未同步到字段结构</strong>
+          <span>该物理表可能不存在，或最近一次同步未采集到字段。</span>
+        </div>
+      `;
+    }
+    return `
+      <div class="field-structure-summary">
+        <span>已同步 ${columns.length} 个字段</span>
+        <button type="button" data-reload-fields>刷新</button>
+      </div>
+      <div class="field-structure-list">
+        <div class="field-structure-head"><span>字段</span><span>类型</span><span>属性</span></div>
+        ${columns.map((column) => `
+          <div class="field-structure-row">
+            <div class="field-identity">
+              <b>${escapeHtml(column.ordinalPosition)}</b>
+              <span><code title="${escapeHtml(column.columnName)}">${escapeHtml(column.columnName)}</code><small>${escapeHtml(column.columnComment || "暂无字段说明")}</small></span>
+            </div>
+            <code class="field-type" title="${escapeHtml(column.dataType)}">${escapeHtml(column.dataType)}</code>
+            <div class="field-properties">
+              ${column.isPrimaryKey ? '<span class="field-key">PK</span>' : ""}
+              <span class="field-nullable ${column.isNullable ? "" : "is-required"}">${column.isNullable ? "可空" : "必填"}</span>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  async function loadFieldMetadata() {
+    const detail = state.assetDetail;
+    const table = detail ? tableById.get(String(detail.tableId)) : null;
+    if (!detail || !table || !physicalTableNames(table).length) return;
+    const physicalIndex = detail.physicalIndex || 0;
+    const assetCode = assetCodeFor(table);
+    if (!assetCode) {
+      detail.fields = { status: "error", message: "当前资产缺少可识别的目录行号" };
+      renderAssetDrawer();
+      return;
+    }
+    detail.fields = { status: "loading" };
+    renderAssetDrawer();
+    try {
+      const params = new URLSearchParams({ physicalIndex: String(physicalIndex) });
+      const response = await fetch(`/api/catalog/assets/by-code/${encodeURIComponent(assetCode)}/fields?${params}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || "字段结构读取失败");
+      if (!state.assetDetail || state.assetDetail.tableId !== detail.tableId || state.assetDetail.physicalIndex !== physicalIndex) return;
+      state.assetDetail.fields = { status: "success", data: payload };
+    } catch (error) {
+      if (!state.assetDetail || state.assetDetail.tableId !== detail.tableId || state.assetDetail.physicalIndex !== physicalIndex) return;
+      state.assetDetail.fields = { status: "error", message: error.message || "字段结构读取失败" };
+    }
+    renderAssetDrawer();
+  }
+
+  function renderTablePreview(table, names, activeIndex) {
+    if (!names.length) {
+      return `
+        <div class="table-preview-empty">
+          <strong>暂无可查询的物理表</strong>
+          <span>请先为该资产补充英文物理表名。</span>
+        </div>
+      `;
+    }
+
+    const preview = state.assetDetail?.preview || { status: "idle", page: 1, pageSize: 20 };
+    if (preview.status === "loading") {
+      return '<div class="table-preview-loading"><i></i><span>正在从 PostgreSQL 读取数据…</span></div>';
+    }
+    if (preview.status === "error") {
+      return `
+        <div class="table-preview-error" role="alert">
+          <strong>查询失败</strong>
+          <span>${escapeHtml(preview.message || "暂时无法读取该表数据")}</span>
+          <button type="button" data-load-table-preview>重新查询</button>
+        </div>
+      `;
+    }
+    if (preview.status !== "success") {
+      return `
+        <div class="table-preview-start">
+          <div>
+            <strong>查询当前物理表</strong>
+            <span>只读查询，每页最多展示 20 行，不支持输入 SQL。</span>
+          </div>
+          <button type="button" data-load-table-preview>查询表数据</button>
+        </div>
+      `;
+    }
+
+    const data = preview.data;
+    const columns = data.columns || [];
+    const rows = data.rows || [];
+    const tableHtml = rows.length ? `
+      <div class="table-preview-scroll" tabindex="0" aria-label="${escapeHtml(names[activeIndex])} 数据预览">
+        <table class="table-preview-grid">
+          <thead><tr>${columns.map((column) => `<th>${escapeHtml(column.name)}</th>`).join("")}</tr></thead>
+          <tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${renderPreviewValue(value)}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+    ` : '<div class="table-preview-empty"><strong>当前页没有数据</strong><span>该表可能为空，或已超过可用分页范围。</span></div>';
+
+    return `
+      <div class="table-preview-result">
+        <div class="table-preview-meta">
+          <span>第 ${data.page} 页 · ${rows.length} 行</span>
+          <span>${data.durationMs} ms</span>
+          <button type="button" data-load-table-preview>刷新</button>
+        </div>
+        ${tableHtml}
+        <div class="table-preview-pager">
+          <button type="button" data-preview-page="${data.page - 1}" ${data.page <= 1 ? "disabled" : ""}>上一页</button>
+          <span>${data.page}</span>
+          <button type="button" data-preview-page="${data.page + 1}" ${data.hasMore ? "" : "disabled"}>下一页</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadTablePreview(page) {
+    const detail = state.assetDetail;
+    const table = detail ? tableById.get(String(detail.tableId)) : null;
+    if (!detail || !table) return;
+    const physicalIndex = detail.physicalIndex || 0;
+    const assetCode = assetCodeFor(table);
+    if (!assetCode) {
+      detail.preview = { status: "error", message: "当前资产缺少可识别的目录行号" };
+      renderAssetDrawer();
+      return;
+    }
+
+    const requestedPage = Math.max(Number(page) || detail.preview?.data?.page || 1, 1);
+    detail.preview = { status: "loading", page: requestedPage, pageSize: 20 };
+    renderAssetDrawer();
+    try {
+      const params = new URLSearchParams({
+        physicalIndex: String(physicalIndex),
+        page: String(requestedPage),
+        pageSize: "20",
+      });
+      const response = await fetch(`/api/source/assets/${encodeURIComponent(assetCode)}/preview?${params}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || "表数据查询失败");
+      if (!state.assetDetail || state.assetDetail.tableId !== detail.tableId || state.assetDetail.physicalIndex !== physicalIndex) return;
+      state.assetDetail.preview = { status: "success", data: payload };
+    } catch (error) {
+      if (!state.assetDetail || state.assetDetail.tableId !== detail.tableId || state.assetDetail.physicalIndex !== physicalIndex) return;
+      state.assetDetail.preview = { status: "error", message: error.message || "表数据查询失败" };
+    }
+    renderAssetDrawer();
+  }
+
   function renderAssetDrawer() {
     if (!state.assetDetail) return;
     const table = tableById.get(String(state.assetDetail.tableId));
@@ -477,6 +669,7 @@
       </section>
     ` : "";
 
+    const savedScroll = els.assetDrawerContent.querySelector(".asset-drawer-body")?.scrollTop || 0;
     els.assetDrawer.style.setProperty("--asset-color", domain.color);
     els.assetDrawerContent.innerHTML = `
       <header class="asset-drawer-header">
@@ -525,11 +718,12 @@
 
         <section class="asset-section">
           <div class="asset-section-title"><h3>字段结构</h3><span>当前物理表</span></div>
-          <div class="asset-empty-fields">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M9 5v14"/></svg>
-            <strong>字段信息尚未维护</strong>
-            <span>后续接入元数据平台后，可在这里展示字段名、类型及说明。</span>
-          </div>
+          ${renderFieldStructure(names)}
+        </section>
+
+        <section class="asset-section table-preview-section">
+          <div class="asset-section-title"><h3>表数据查询</h3><span>PostgreSQL · 只读</span></div>
+          ${renderTablePreview(table, names, activeIndex)}
         </section>
 
         <section class="asset-section">
@@ -553,13 +747,19 @@
     els.assetDrawerContent.querySelectorAll("[data-physical-index]").forEach((button) => {
       button.addEventListener("click", () => {
         state.assetDetail.physicalIndex = Number(button.dataset.physicalIndex);
+        state.assetDetail.preview = { status: "idle", page: 1, pageSize: 20 };
+        state.assetDetail.fields = { status: "loading" };
         renderAssetDrawer();
+        loadFieldMetadata();
       });
     });
     els.assetDrawerContent.querySelectorAll("[data-physical-step]").forEach((button) => {
       button.addEventListener("click", () => {
         state.assetDetail.physicalIndex += Number(button.dataset.physicalStep);
+        state.assetDetail.preview = { status: "idle", page: 1, pageSize: 20 };
+        state.assetDetail.fields = { status: "loading" };
         renderAssetDrawer();
+        loadFieldMetadata();
       });
     });
     els.assetDrawerContent.querySelectorAll("[data-copy-table-name]").forEach((button) => {
@@ -577,6 +777,19 @@
         }
       });
     });
+    els.assetDrawerContent.querySelectorAll("[data-load-table-preview]").forEach((button) => {
+      button.addEventListener("click", () => loadTablePreview(state.assetDetail?.preview?.data?.page || 1));
+    });
+    els.assetDrawerContent.querySelectorAll("[data-preview-page]").forEach((button) => {
+      button.addEventListener("click", () => loadTablePreview(Number(button.dataset.previewPage)));
+    });
+    els.assetDrawerContent.querySelectorAll("[data-reload-fields]").forEach((button) => {
+      button.addEventListener("click", () => loadFieldMetadata());
+    });
+    requestAnimationFrame(() => {
+      const drawerBody = els.assetDrawerContent.querySelector(".asset-drawer-body");
+      if (drawerBody) drawerBody.scrollTop = savedScroll;
+    });
   }
 
   function openAssetDrawer(id) {
@@ -585,10 +798,16 @@
     els.drawer.classList.remove("is-open");
     els.drawer.setAttribute("aria-hidden", "true");
     state.selectedTableId = String(table.id);
-    state.assetDetail = { tableId: String(table.id), physicalIndex: 0 };
+    state.assetDetail = {
+      tableId: String(table.id),
+      physicalIndex: 0,
+      preview: { status: "idle", page: 1, pageSize: 20 },
+      fields: { status: "loading" },
+    };
     syncSelectedTableCard();
     dataMap.selectTable(table.id);
     renderAssetDrawer();
+    loadFieldMetadata();
     els.assetDrawerLayer.classList.add("is-open");
     els.assetDrawerLayer.setAttribute("aria-hidden", "false");
     document.body.classList.add("asset-drawer-open");

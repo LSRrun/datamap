@@ -4,7 +4,10 @@
   "private": true,
   "description": "东鹏数据地图演示及 PostgreSQL 数据源连接配置",
   "scripts": {
-    "start": "node backend/server.js"
+    "start": "node backend/server.js",
+    "db:migrate": "node backend/db/migrate.js",
+    "import:catalog": "node backend/db/import-catalog.js",
+    "sync:catalog": "node backend/db/sync-catalog.js"
   },
   "dependencies": {
     "pg": "^8.0.0"
