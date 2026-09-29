@@ -22,3 +22,5 @@ CATALOG_DATABASE_URL='postgresql://user:password@host:5432/datamap_catalog' npm 
 
 - `001_initial_catalog.sql`：元数据仓库基础表、索引与更新时间触发器。
 - `002_column_sync_state.sql`：为字段增加在线状态和最近发现时间，用于字段结构同步与软下线。
+- `003_physical_table_metrics.sql`：为物理表增加存储量、精确行数和可维护的资产指标。
+- `004_physical_table_labels.sql`：为物理表增加 Excel 资产类型和数据分层标签。

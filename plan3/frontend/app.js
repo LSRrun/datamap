@@ -458,14 +458,16 @@
     return [...new Set(names)];
   }
 
-  function tableLayer(name) {
-    const value = String(name || "").toUpperCase();
-    if (!value) return "层级待完善";
-    if (/(^|\.)DWI_/.test(value)) return "DWI 贴源层";
-    if (/(^|\.)DWR_/.test(value)) return "DWR 明细层";
-    if (/(^|\.)DM_/.test(value)) return "DM 数据集市";
-    if (/(^|\.)ODS_/.test(value)) return "ODS 贴源层";
-    return "层级待完善";
+  function currentPhysicalMetadata(table) {
+    const fields = state.assetDetail?.fields;
+    const metrics = state.assetDetail?.metrics;
+    const remote = fields?.status === "success"
+      ? fields.data?.physicalTable
+      : (metrics?.status === "success" ? metrics.data?.physicalTable : null);
+    return {
+      assetType: remote ? remote.assetType || "" : table.assetType || "",
+      dataLayer: remote ? remote.dataLayer || "" : table.dataLayer || "",
+    };
   }
 
   function assetCodeFor(table) {
@@ -477,6 +479,60 @@
   function renderPreviewValue(value) {
     if (value === null) return '<span class="preview-null">NULL</span>';
     return escapeHtml(value);
+  }
+
+  function metricNumber(value, options = {}) {
+    if (value === null || value === undefined || value === "") return "—";
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "—";
+    return new Intl.NumberFormat("zh-CN", options).format(number);
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes < 0) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    let amount = bytes;
+    let index = 0;
+    while (amount >= 1024 && index < units.length - 1) {
+      amount /= 1024;
+      index += 1;
+    }
+    return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(amount)} ${units[index]}`;
+  }
+
+  function renderAssetMetrics() {
+    const fields = state.assetDetail?.fields;
+    const metricsState = state.assetDetail?.metrics || { status: "loading" };
+    const cached = fields?.status === "success" ? fields.data?.physicalTable || {} : {};
+    const live = metricsState.status === "success" ? metricsState.data?.physicalTable || {} : {};
+    const metrics = { ...cached, ...live };
+    const loading = metricsState.status === "loading";
+    const quality = metrics.qualityScore === null || metrics.qualityScore === undefined ? null : Number(metrics.qualityScore);
+    const sla = metrics.slaAchievementRate === null || metrics.slaAchievementRate === undefined ? null : Number(metrics.slaAchievementRate);
+    const storage = loading && !metrics.totalSize && metrics.totalBytes === undefined
+      ? "正在计算…"
+      : (metrics.totalSize || formatBytes(metrics.totalBytes));
+    const rowCount = loading && metrics.exactRowCount === undefined
+      ? "正在计算…"
+      : metricNumber(metrics.exactRowCount, { maximumFractionDigits: 0 });
+    return `
+      <dl class="asset-metric-grid">
+        <div class="asset-metric quality-metric">
+          <dt>质量分</dt>
+          <dd>${quality === null ? '<span class="metric-empty">—</span>' : `<span class="quality-ring" style="--metric-progress:${Math.min(Math.max(quality, 0), 100)}%"><b>${escapeHtml(metricNumber(quality, { maximumFractionDigits: 2 }))}</b></span>`}</dd>
+        </div>
+        <div class="asset-metric sla-metric">
+          <dt>SLA 达成率</dt>
+          <dd><strong>${sla === null ? "—" : `${escapeHtml(metricNumber(sla, { maximumFractionDigits: 2 }))}%`}</strong>${sla === null ? "" : `<span class="sla-track"><i style="width:${Math.min(Math.max(sla, 0), 100)}%"></i></span>`}</dd>
+        </div>
+        <div class="asset-metric"><dt>存储量</dt><dd><strong>${escapeHtml(storage)}</strong></dd></div>
+        <div class="asset-metric"><dt>数据行数</dt><dd><strong>${escapeHtml(rowCount)}</strong></dd></div>
+        <div class="asset-metric"><dt>下游引用</dt><dd><strong>${escapeHtml(metricNumber(metrics.downstreamReferences, { maximumFractionDigits: 0 }))}${metrics.downstreamReferences === null || metrics.downstreamReferences === undefined ? "" : " 个"}</strong></dd></div>
+        <div class="asset-metric"><dt>访问热度</dt><dd><strong>${escapeHtml(metricNumber(metrics.accessHeat, { maximumFractionDigits: 0 }))}</strong></dd></div>
+      </dl>
+      ${metricsState.status === "error" ? `<p class="asset-metric-note">存储量和数据行数读取失败：${escapeHtml(metricsState.message || "请稍后重试")}</p>` : ""}
+    `;
   }
 
   function renderFieldStructure(names) {
@@ -559,6 +615,33 @@
     } catch (error) {
       if (!state.assetDetail || state.assetDetail.tableId !== detail.tableId || state.assetDetail.physicalIndex !== physicalIndex) return;
       state.assetDetail.fields = { status: "error", message: error.message || "字段结构读取失败" };
+    }
+    renderAssetDrawer();
+  }
+
+  async function loadAssetMetrics() {
+    const detail = state.assetDetail;
+    const table = detail ? tableById.get(String(detail.tableId)) : null;
+    if (!detail || !table || !physicalTableNames(table).length) return;
+    const physicalIndex = detail.physicalIndex || 0;
+    const assetCode = assetCodeFor(table);
+    if (!assetCode) {
+      detail.metrics = { status: "error", message: "当前资产缺少可识别的目录行号" };
+      renderAssetDrawer();
+      return;
+    }
+    detail.metrics = { status: "loading" };
+    renderAssetDrawer();
+    try {
+      const params = new URLSearchParams({ physicalIndex: String(physicalIndex) });
+      const response = await fetch(`/api/source/assets/${encodeURIComponent(assetCode)}/metrics?${params}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || "资产指标读取失败");
+      if (!state.assetDetail || state.assetDetail.tableId !== detail.tableId || state.assetDetail.physicalIndex !== physicalIndex) return;
+      state.assetDetail.metrics = { status: "success", data: payload };
+    } catch (error) {
+      if (!state.assetDetail || state.assetDetail.tableId !== detail.tableId || state.assetDetail.physicalIndex !== physicalIndex) return;
+      state.assetDetail.metrics = { status: "error", message: error.message || "资产指标读取失败" };
     }
     renderAssetDrawer();
   }
@@ -669,6 +752,8 @@
     state.assetDetail.physicalIndex = Math.min(Math.max(state.assetDetail.physicalIndex || 0, 0), maxIndex);
     const activeIndex = state.assetDetail.physicalIndex;
     const activeName = names[activeIndex] || "英文表名待完善";
+    const assetCode = assetCodeFor(table);
+    const physicalMetadata = currentPhysicalMetadata(table);
     const hasMultiple = names.length > 1;
     const domain = domainByName.get(table.domain) || { color: "#5a5feb" };
     const tableOptions = hasMultiple ? `
@@ -719,19 +804,13 @@
         <div class="asset-badges">
           <span class="status-chip ${statusClass(table.online)}">${statusLabel(table.online, "online")}</span>
           <span class="status-chip ${statusClass(table.inLake)}">${statusLabel(table.inLake, "lake")}</span>
-          <span class="asset-outline-chip">${escapeHtml(tableLayer(activeName))}</span>
+          <span class="asset-outline-chip" title="资产类型">${escapeHtml(physicalMetadata.assetType || "资产类型待完善")}</span>
+          <span class="asset-outline-chip" title="数据分层">${escapeHtml(physicalMetadata.dataLayer || "数据分层待完善")}</span>
         </div>
 
         <section class="asset-section">
           <h3>资产信息</h3>
-          <dl class="asset-info-grid">
-            <div><dt>L2 主题域</dt><dd>${escapeHtml(table.topic || "待完善")}</dd></div>
-            <div><dt>L3 业务对象</dt><dd>${escapeHtml(table.businessObject || "待完善")}</dd></div>
-            <div><dt>模型负责人</dt><dd>${escapeHtml(table.owner || "待完善")}</dd></div>
-            <div><dt>上线时间</dt><dd>${escapeHtml(table.launchDate || "待完善")}</dd></div>
-            <div><dt>目录序号</dt><dd>#${escapeHtml(table.sourceRow || table.id)}</dd></div>
-            <div><dt>物理表数量</dt><dd>${Math.max(names.length, 1)} 张</dd></div>
-          </dl>
+          ${renderAssetMetrics()}
         </section>
 
         <section class="asset-section">
@@ -759,7 +838,7 @@
         </section>
       </div>
       <footer class="asset-drawer-footer">
-        <button type="button" class="asset-secondary-action" data-copy-table-name ${names.length ? "" : "disabled"}>复制表名</button>
+        <button type="button" class="asset-secondary-action" data-edit-asset-metadata ${assetCode ? "" : "disabled"}>编辑元数据</button>
         <button type="button" class="asset-primary-action" data-close-asset-drawer>关闭详情</button>
       </footer>
     `;
@@ -772,8 +851,10 @@
         state.assetDetail.physicalIndex = Number(button.dataset.physicalIndex);
         state.assetDetail.preview = { status: "idle", page: 1, pageSize: 20 };
         state.assetDetail.fields = { status: "loading" };
+        state.assetDetail.metrics = { status: "loading" };
         renderAssetDrawer();
         loadFieldMetadata();
+        loadAssetMetrics();
       });
     });
     els.assetDrawerContent.querySelectorAll("[data-physical-step]").forEach((button) => {
@@ -781,8 +862,10 @@
         state.assetDetail.physicalIndex += Number(button.dataset.physicalStep);
         state.assetDetail.preview = { status: "idle", page: 1, pageSize: 20 };
         state.assetDetail.fields = { status: "loading" };
+        state.assetDetail.metrics = { status: "loading" };
         renderAssetDrawer();
         loadFieldMetadata();
+        loadAssetMetrics();
       });
     });
     els.assetDrawerContent.querySelectorAll("[data-copy-table-name]").forEach((button) => {
@@ -799,6 +882,10 @@
           window.prompt("复制表名", activeName);
         }
       });
+    });
+    els.assetDrawerContent.querySelector("[data-edit-asset-metadata]")?.addEventListener("click", () => {
+      if (!assetCode) return;
+      window.location.href = `./metadata.html?editAsset=${encodeURIComponent(assetCode)}`;
     });
     els.assetDrawerContent.querySelectorAll("[data-load-table-preview]").forEach((button) => {
       button.addEventListener("click", () => loadTablePreview(state.assetDetail?.preview?.data?.page || 1));
@@ -826,11 +913,13 @@
       physicalIndex: Math.max(0, Number(physicalIndex) || 0),
       preview: { status: "idle", page: 1, pageSize: 20 },
       fields: { status: "loading" },
+      metrics: { status: "loading" },
     };
     syncSelectedTableCard();
     dataMap.selectTable(table.id);
     renderAssetDrawer();
     loadFieldMetadata();
+    loadAssetMetrics();
     els.assetDrawerLayer.classList.add("is-open");
     els.assetDrawerLayer.setAttribute("aria-hidden", "false");
     document.body.classList.add("asset-drawer-open");

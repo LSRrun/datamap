@@ -90,6 +90,44 @@ function catalogPoolConfig() {
   return config;
 }
 
+function nullableNumber(value, label, minimum, maximum, integer = false) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || (integer && !Number.isInteger(number)) || number < minimum || number > maximum) {
+    const range = maximum === Number.MAX_SAFE_INTEGER ? `不小于 ${minimum}` : `${minimum} 到 ${maximum}`;
+    throw new HttpError(400, `${label}必须是${range}${integer ? "的整数" : "的数字"}`);
+  }
+  return number;
+}
+
+function normalizePhysicalMetrics(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 100) throw new HttpError(400, "物理表指标格式无效");
+  const seen = new Set();
+  return value.map((item) => {
+    const id = cleanText(item?.id, 30);
+    if (!/^\d+$/.test(id) || id === "0" || seen.has(id)) throw new HttpError(400, "物理表指标 ID 无效或重复");
+    seen.add(id);
+    const assetType = cleanText(item.assetType, 30) || null;
+    const dataLayer = cleanText(item.dataLayer, 30) || null;
+    if (!new Set([null, "事实表", "维度表"]).has(assetType)) {
+      throw new HttpError(400, "资产类型只能为：事实表、维度表");
+    }
+    if (!new Set([null, "模型层", "应用层"]).has(dataLayer)) {
+      throw new HttpError(400, "数据分层只能为：模型层、应用层");
+    }
+    return {
+      id,
+      assetType,
+      dataLayer,
+      qualityScore: nullableNumber(item.qualityScore, "质量分", 0, 100),
+      slaAchievementRate: nullableNumber(item.slaAchievementRate, "SLA 达成率", 0, 100),
+      downstreamReferences: nullableNumber(item.downstreamReferences, "下游引用", 0, Number.MAX_SAFE_INTEGER, true),
+      accessHeat: nullableNumber(item.accessHeat, "访问热度", 0, Number.MAX_SAFE_INTEGER, true),
+    };
+  });
+}
+
 function normalizeAssetInput(body) {
   const asset = {
     nameCn: cleanText(body.nameCn, 255),
@@ -101,6 +139,7 @@ function normalizeAssetInput(body) {
     onlineStatus: cleanText(body.onlineStatus, 30) || null,
     lakeStatus: cleanText(body.lakeStatus, 30) || null,
     sensitivityLevel: cleanText(body.sensitivityLevel, 30) || null,
+    physicalMetrics: normalizePhysicalMetrics(body.physicalMetrics),
   };
   const missing = [
     ["中文表名", asset.nameCn],
@@ -191,9 +230,18 @@ function createCatalogApi() {
             'schemaName', p.schema_name,
             'tableName', p.table_name,
             'tableType', p.table_type,
+            'assetType', p.asset_type,
+            'dataLayer', p.data_layer,
             'isActive', p.is_active,
             'estimatedRows', p.estimated_rows,
-            'totalBytes', p.total_bytes
+            'totalBytes', p.total_bytes,
+            'totalSize', p.total_size_pretty,
+            'exactRowCount', p.exact_row_count,
+            'qualityScore', p.quality_score,
+            'slaAchievementRate', p.sla_achievement_rate,
+            'downstreamReferences', p.downstream_references,
+            'accessHeat', p.access_heat,
+            'lastSeenAt', p.last_seen_at
           ) ORDER BY p.id) AS "tables"
           FROM catalog_physical_tables p WHERE p.asset_id = a.id
         ) physical ON TRUE
@@ -216,25 +264,53 @@ function createCatalogApi() {
   async function updateAsset(request, response, assetId) {
     if (!/^\d+$/.test(assetId) || assetId === "0") throw new HttpError(400, "资产 ID 无效");
     const asset = normalizeAssetInput(await readJsonBody(request));
-    const result = await pool.query(`
-      UPDATE catalog_assets SET
-        name_cn = $1,
-        l1_domain = $2,
-        l2_topic = $3,
-        l3_object = $4,
-        owner = $5,
-        description = $6,
-        online_status = $7,
-        lake_status = $8,
-        sensitivity_level = $9
-      WHERE id = $10
-      RETURNING id::TEXT AS "id", asset_code AS "assetCode", updated_at AS "updatedAt"
-    `, [
-      asset.nameCn, asset.l1Domain, asset.l2Topic, asset.l3Object, asset.owner,
-      asset.description, asset.onlineStatus, asset.lakeStatus, asset.sensitivityLevel, assetId,
-    ]);
-    if (!result.rows[0]) throw new HttpError(404, "未找到该元数据资产", "NOT_FOUND");
-    sendJson(response, 200, { ok: true, asset: result.rows[0], message: "元数据已保存" });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query(`
+        UPDATE catalog_assets SET
+          name_cn = $1,
+          l1_domain = $2,
+          l2_topic = $3,
+          l3_object = $4,
+          owner = $5,
+          description = $6,
+          online_status = $7,
+          lake_status = $8,
+          sensitivity_level = $9
+        WHERE id = $10
+        RETURNING id::TEXT AS "id", asset_code AS "assetCode", updated_at AS "updatedAt"
+      `, [
+        asset.nameCn, asset.l1Domain, asset.l2Topic, asset.l3Object, asset.owner,
+        asset.description, asset.onlineStatus, asset.lakeStatus, asset.sensitivityLevel, assetId,
+      ]);
+      if (!result.rows[0]) throw new HttpError(404, "未找到该元数据资产", "NOT_FOUND");
+      for (const metrics of asset.physicalMetrics) {
+        const metricResult = await client.query(`
+          UPDATE catalog_physical_tables SET
+            quality_score = $1,
+            sla_achievement_rate = $2,
+            downstream_references = $3,
+            access_heat = $4,
+            asset_type = $5,
+            data_layer = $6
+          WHERE id = $7 AND asset_id = $8
+          RETURNING id
+        `, [
+          metrics.qualityScore, metrics.slaAchievementRate,
+          metrics.downstreamReferences, metrics.accessHeat,
+          metrics.assetType, metrics.dataLayer, metrics.id, assetId,
+        ]);
+        if (!metricResult.rows[0]) throw new HttpError(400, "物理表指标与当前资产不匹配");
+      }
+      await client.query("COMMIT");
+      sendJson(response, 200, { ok: true, asset: result.rows[0], message: "元数据、标签与资产指标已保存" });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async function findPreviewTarget(assetCode, physicalIndex) {
@@ -244,8 +320,17 @@ function createCatalogApi() {
         'schemaName', p.schema_name,
         'tableName', p.table_name,
         'tableType', p.table_type,
+        'assetType', p.asset_type,
+        'dataLayer', p.data_layer,
         'isActive', p.is_active,
-        'lastSeenAt', p.last_seen_at
+        'lastSeenAt', p.last_seen_at,
+        'totalBytes', p.total_bytes,
+        'totalSize', p.total_size_pretty,
+        'exactRowCount', p.exact_row_count,
+        'qualityScore', p.quality_score,
+        'slaAchievementRate', p.sla_achievement_rate,
+        'downstreamReferences', p.downstream_references,
+        'accessHeat', p.access_heat
       ) AS target
       FROM catalog_assets a
       JOIN catalog_physical_tables p ON p.asset_id = a.id
@@ -254,6 +339,17 @@ function createCatalogApi() {
       LIMIT 1 OFFSET $2
     `, [assetCode, physicalIndex]);
     return result.rows[0]?.target || null;
+  }
+
+  async function updatePhysicalTableTechnicalMetrics(physicalTableId, metrics) {
+    await pool.query(`
+      UPDATE catalog_physical_tables SET
+        total_bytes = $1,
+        total_size_pretty = $2,
+        exact_row_count = $3,
+        last_seen_at = CURRENT_TIMESTAMP
+      WHERE id = $4
+    `, [metrics.totalBytes, metrics.totalSize, metrics.exactRowCount, physicalTableId]);
   }
 
   async function getAssetFields(response, assetCode, physicalIndex) {
@@ -324,6 +420,7 @@ function createCatalogApi() {
   return {
     handle,
     findPreviewTarget,
+    updatePhysicalTableTechnicalMetrics,
     close: () => pool.end(),
   };
 }

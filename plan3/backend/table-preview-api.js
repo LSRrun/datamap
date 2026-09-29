@@ -3,6 +3,7 @@
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_METRICS_TIMEOUT_MS = 30_000;
 const MAX_CELL_LENGTH = 2_000;
 
 class PreviewError extends Error {
@@ -65,6 +66,12 @@ function queryTimeoutMs() {
   return Math.min(Math.max(configured, 1_000), 30_000);
 }
 
+function metricsTimeoutMs() {
+  const configured = Number(process.env.METRICS_QUERY_TIMEOUT_MS);
+  if (!Number.isInteger(configured)) return DEFAULT_METRICS_TIMEOUT_MS;
+  return Math.min(Math.max(configured, 1_000), 120_000);
+}
+
 async function resolveSourceTable(client, target) {
   const result = await client.query(`
     SELECT table_schema AS "schemaName", table_name AS "tableName", table_type AS "tableType"
@@ -103,9 +110,39 @@ async function runReadOnlyPreview(pool, sourceTable, page, pageSize) {
   }
 }
 
+async function runReadOnlyMetrics(pool, sourceTable) {
+  const client = await pool.connect();
+  const startedAt = Date.now();
+  const qualifiedName = `${quoteIdentifier(sourceTable.schemaName)}.${quoteIdentifier(sourceTable.tableName)}`;
+  try {
+    await client.query("BEGIN READ ONLY");
+    await client.query(`SET LOCAL statement_timeout = ${metricsTimeoutMs()}`);
+    const result = await client.query({
+      text: `
+        SELECT
+          pg_total_relation_size($1::regclass)::BIGINT AS "totalBytes",
+          pg_size_pretty(pg_total_relation_size($1::regclass)) AS "totalSize",
+          COUNT(*)::BIGINT AS "exactRowCount"
+        FROM ${qualifiedName}
+      `,
+      values: [qualifiedName],
+      query_timeout: metricsTimeoutMs(),
+    });
+    await client.query("COMMIT");
+    return { ...result.rows[0], durationMs: Date.now() - startedAt };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function createTablePreviewApi({ catalogApi, getSourcePool }) {
   async function handle(request, response, url) {
-    const match = url.pathname.match(/^\/api\/source\/assets\/([^/]+)\/preview$/);
+    const previewMatch = url.pathname.match(/^\/api\/source\/assets\/([^/]+)\/preview$/);
+    const metricsMatch = url.pathname.match(/^\/api\/source\/assets\/([^/]+)\/metrics$/);
+    const match = previewMatch || metricsMatch;
     if (!match) return false;
     if (request.method !== "GET") {
       sendJson(response, 405, { ok: false, code: "METHOD_NOT_ALLOWED", message: "Method Not Allowed" });
@@ -132,6 +169,21 @@ function createTablePreviewApi({ catalogApi, getSourcePool }) {
         throw new PreviewError(404, `数据源中未找到物理表 ${target.schemaName}.${target.tableName}`, "SOURCE_TABLE_NOT_FOUND");
       }
 
+      if (metricsMatch) {
+        const technicalMetrics = await runReadOnlyMetrics(pool, sourceTable);
+        await catalogApi.updatePhysicalTableTechnicalMetrics(target.id, technicalMetrics);
+        sendJson(response, 200, {
+          ok: true,
+          assetCode,
+          physicalIndex,
+          physicalTable: {
+            ...target,
+            ...technicalMetrics,
+          },
+        });
+        return true;
+      }
+
       const preview = await runReadOnlyPreview(pool, sourceTable, page, pageSize);
       sendJson(response, 200, {
         ok: true,
@@ -144,12 +196,13 @@ function createTablePreviewApi({ catalogApi, getSourcePool }) {
       });
     } catch (error) {
       const expected = error instanceof PreviewError;
-      const status = expected ? error.status : (error?.code === "57014" ? 408 : 500);
+      const timedOut = error?.code === "57014" || error?.code === "QUERY_READ_TIMEOUT";
+      const status = expected ? error.status : (timedOut ? 408 : 500);
       if (status >= 500) console.error(`表数据查询异常：${safeError(error)}`);
       sendJson(response, status, {
         ok: false,
-        code: expected ? error.code : (error?.code === "57014" ? "QUERY_TIMEOUT" : "PREVIEW_FAILED"),
-        message: expected ? error.message : (error?.code === "57014" ? "查询超时，请缩小查询范围后重试" : "表数据查询失败，请稍后重试"),
+        code: expected ? error.code : (timedOut ? "QUERY_TIMEOUT" : "PREVIEW_FAILED"),
+        message: expected ? error.message : (timedOut ? "指标或数据查询超时，请稍后重试" : "表数据或指标查询失败，请稍后重试"),
       });
     }
     return true;

@@ -6,7 +6,7 @@
     <meta name="description" content="东鹏数据地图元数据管理" />
     <meta name="theme-color" content="#f4f7fb" />
     <title>元数据管理 · 东鹏数据地图</title>
-    <link rel="stylesheet" href="./metadata.css?v=20260928-2" />
+    <link rel="stylesheet" href="./metadata.css?v=20260929-1" />
   </head>
   <body>
     <header class="app-header">
@@ -81,6 +81,23 @@
           <label><span>敏感等级</span><select name="sensitivityLevel"><option value="">未设置</option><option>内部</option><option>敏感</option><option>高敏</option></select></label>
           <label class="wide"><span>业务说明</span><textarea name="description" maxlength="4000" rows="4"></textarea></label>
           <div class="wide readonly-block"><span>关联物理表（只读）</span><div id="editPhysicalTables"></div></div>
+          <section class="wide metric-editor" id="metricEditor">
+            <div class="metric-editor-heading">
+              <div><strong>物理表标签与资产指标</strong><span>资产类型和数据分层来自资产清单，可按物理表维护；存储量和数据行数由 PostgreSQL 自动计算。</span></div>
+            </div>
+            <div class="metric-tabs" id="editMetricTabs" aria-label="选择要维护指标的物理表"></div>
+            <div class="metric-form" id="editMetricForm">
+              <label><span>资产类型</span><select id="metricAssetType"><option value="">待完善</option><option>事实表</option><option>维度表</option></select></label>
+              <label><span>数据分层</span><select id="metricDataLayer"><option value="">待完善</option><option>模型层</option><option>应用层</option></select></label>
+              <label><span>存储量（自动）</span><input id="metricTotalSize" readonly /></label>
+              <label><span>数据行数（自动）</span><input id="metricRowCount" readonly /></label>
+              <label><span>质量分</span><input id="metricQualityScore" type="number" min="0" max="100" step="0.01" placeholder="暂未维护" /></label>
+              <label><span>SLA 达成率（%）</span><input id="metricSlaRate" type="number" min="0" max="100" step="0.01" placeholder="暂未维护" /></label>
+              <label><span>下游引用</span><input id="metricDownstreamReferences" type="number" min="0" step="1" placeholder="暂未维护" /></label>
+              <label><span>访问热度</span><input id="metricAccessHeat" type="number" min="0" step="1" placeholder="暂未维护" /></label>
+            </div>
+            <div class="metric-empty-editor" id="metricEmptyEditor" hidden>当前资产没有关联物理表，暂无可维护的资产指标。</div>
+          </section>
         </div>
         <div class="form-message" id="formMessage" aria-live="polite"></div>
         <div class="dialog-actions"><button class="secondary-button" id="cancelEdit" type="button">取消</button><button class="primary-button" id="saveEdit" type="submit">保存元数据</button></div>
@@ -109,6 +126,6 @@
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./metadata.js?v=20260928-2"></script>
+    <script src="./metadata.js?v=20260929-labels-1"></script>
   </body>
 </html>

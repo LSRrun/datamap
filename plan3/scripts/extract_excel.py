@@ -23,12 +23,18 @@ HEADERS = {
     "是否线上化": "online",
     "是否入湖": "inLake",
     "说明": "note",
+    "资产类型": "assetType",
+    "数据分层": "dataLayer",
 }
 
 REQUIRED_CATALOG_HEADERS = ("主题域分组", "主题域", "业务对象", "数据表", "英文表名")
 LEVEL_PREFIX = re.compile(r"^L[1-4]\s*", re.IGNORECASE)
 PHYSICAL_SEPARATOR = re.compile(r"[、，,；;|/\r\n]+")
 PG_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
+DOMAIN_COLORS = (
+    "#5A5FEB", "#397CE8", "#1BA3C6", "#20A979", "#8A58D8", "#EC7C43", "#E14F7B",
+    "#00A79B", "#6B77D8", "#B66BC8", "#4D9F64", "#D59335", "#56708F", "#8A6D4D",
+)
 
 
 def normalize(value):
@@ -110,30 +116,54 @@ def extract(workbook_path: Path) -> dict:
     domain_order: list[str] = []
     tables: list[dict] = []
 
-    for values in rows:
+    for source_row, values in enumerate(rows, start=2):
         row = {
             target: normalize(values[positions[source]])
             for source, target in HEADERS.items()
             if source in positions and positions[source] < len(values)
         }
         for level in ("domain", "subdomain", "object"):
-            if row.get(level):
-                current[level] = row[level]
-            else:
-                row[level] = current[level]
+            cleaned = clean_level(row.get(level))
+            if cleaned:
+                current[level] = cleaned
+            row[level] = current[level]
+        row["name"] = clean_level(row.get("name"))
 
         if row.get("domain") and row["domain"] not in domain_order:
             domain_order.append(row["domain"])
         if row.get("name"):
-            tables.append({key: row.get(key, "") for key in HEADERS.values()})
+            tables.append({
+                "id": f"table-{source_row}",
+                "sourceRow": source_row,
+                "domain": row.get("domain", ""),
+                "topic": row.get("subdomain", ""),
+                "businessObject": row.get("object", ""),
+                "name": row.get("name", ""),
+                "englishName": row.get("englishName", ""),
+                "owner": row.get("owner", ""),
+                "launchDate": row.get("launchDate", ""),
+                "online": row.get("online", ""),
+                "inLake": row.get("inLake", ""),
+                "description": row.get("note", ""),
+                "assetType": row.get("assetType", ""),
+                "dataLayer": row.get("dataLayer", ""),
+            })
 
     counts = {name: 0 for name in domain_order}
     for table in tables:
         counts[table["domain"]] = counts.get(table["domain"], 0) + 1
 
     return {
-        "source": workbook_path.name,
-        "domains": [{"name": name, "count": counts.get(name, 0)} for name in domain_order],
+        "meta": {
+            "source": workbook_path.name,
+            "sourceDate": datetime.fromtimestamp(workbook_path.stat().st_mtime).strftime("%Y-%m-%d"),
+            "directoryRows": sheet.max_row - 1,
+            "tableRows": len(tables),
+        },
+        "domains": [
+            {"name": name, "count": counts.get(name, 0), "color": DOMAIN_COLORS[index % len(DOMAIN_COLORS)]}
+            for index, name in enumerate(domain_order)
+        ],
         "tables": tables,
     }
 
@@ -194,6 +224,9 @@ def extract_catalog(workbook_path: Path, default_schema: str = "public") -> dict
             hierarchy_errors.append({"sourceRow": source_row, "missingLevels": missing_levels})
 
         physical = split_physical_tables(row.get("englishName"), default_schema)
+        for table in physical["tables"]:
+            table["assetType"] = normalize(row.get("assetType"))
+            table["dataLayer"] = normalize(row.get("dataLayer"))
         if not physical["rawParts"]:
             missing_physical.append({"sourceRow": source_row, "assetCode": asset_code, "nameCn": name_cn})
         if len(physical["rawParts"]) > 1:

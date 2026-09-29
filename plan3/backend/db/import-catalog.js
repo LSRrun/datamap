@@ -255,12 +255,17 @@ async function importCatalog(client, source, plan, report) {
       }
       await client.query(
         `INSERT INTO catalog_physical_tables (
-           asset_id, source_id, schema_name, table_name, table_type, is_active
-         ) VALUES ($1, $2, $3, $4, 'table', FALSE)
+           asset_id, source_id, schema_name, table_name, table_type, asset_type, data_layer, is_active
+         ) VALUES ($1, $2, $3, $4, 'table', $5, $6, FALSE)
          ON CONFLICT (source_id, schema_name, table_name) DO UPDATE SET
-           asset_id = COALESCE(catalog_physical_tables.asset_id, EXCLUDED.asset_id)
+           asset_id = COALESCE(catalog_physical_tables.asset_id, EXCLUDED.asset_id),
+           asset_type = EXCLUDED.asset_type,
+           data_layer = EXCLUDED.data_layer
          RETURNING id`,
-        [assetId, sourceId, table.schemaName, table.tableName]
+        [
+          assetId, sourceId, table.schemaName, table.tableName,
+          table.assetType || null, table.dataLayer || null,
+        ]
       );
     }
     report.import.physicalTablesExisting = plan.physicalTables.filter((table) => (

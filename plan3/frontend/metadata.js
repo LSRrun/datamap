@@ -13,6 +13,12 @@
     pageNumber: document.getElementById("pageNumber"), pageSummary: document.getElementById("pageSummary"),
     dialog: document.getElementById("editDialog"), form: document.getElementById("editForm"),
     editIdentity: document.getElementById("editIdentity"), editPhysicalTables: document.getElementById("editPhysicalTables"),
+    editMetricTabs: document.getElementById("editMetricTabs"), editMetricForm: document.getElementById("editMetricForm"),
+    metricAssetType: document.getElementById("metricAssetType"), metricDataLayer: document.getElementById("metricDataLayer"),
+    metricEmptyEditor: document.getElementById("metricEmptyEditor"), metricTotalSize: document.getElementById("metricTotalSize"),
+    metricRowCount: document.getElementById("metricRowCount"), metricQualityScore: document.getElementById("metricQualityScore"),
+    metricSlaRate: document.getElementById("metricSlaRate"), metricDownstreamReferences: document.getElementById("metricDownstreamReferences"),
+    metricAccessHeat: document.getElementById("metricAccessHeat"),
     formMessage: document.getElementById("formMessage"), saveEdit: document.getElementById("saveEdit"),
     closeDialog: document.getElementById("closeDialog"), cancelEdit: document.getElementById("cancelEdit"), toast: document.getElementById("toast"),
     fieldsDialog: document.getElementById("fieldsDialog"), closeFieldsDialog: document.getElementById("closeFieldsDialog"),
@@ -21,9 +27,18 @@
     fieldsRows: document.getElementById("fieldsRows"), fieldsEmpty: document.getElementById("fieldsEmpty"),
   };
   let editingId = null;
+  let editingItem = null;
+  let activeMetricTableId = null;
+  let metricDrafts = new Map();
   let fieldViewer = null;
   let searchTimer = null;
   let toastTimer = null;
+  let pendingEditAssetCode = new URLSearchParams(window.location.search).get("editAsset")?.trim() || "";
+
+  if (pendingEditAssetCode) {
+    state.query = pendingEditAssetCode;
+    els.searchInput.value = pendingEditAssetCode;
+  }
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
@@ -45,6 +60,67 @@
   function formatTime(value) {
     if (!value) return "—";
     return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+  }
+
+  function formatMetricNumber(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    const number = Number(value);
+    return Number.isFinite(number) ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(number) : "—";
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(value);
+    if (!Number.isFinite(bytes) || bytes < 0) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+    let amount = bytes;
+    let index = 0;
+    while (amount >= 1024 && index < units.length - 1) { amount /= 1024; index += 1; }
+    return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(amount)} ${units[index]}`;
+  }
+
+  function inputMetricValue(value) {
+    return value === null || value === undefined ? "" : String(value);
+  }
+
+  function captureMetricDraft() {
+    if (!activeMetricTableId || !metricDrafts.has(activeMetricTableId)) return;
+    metricDrafts.set(activeMetricTableId, {
+      ...metricDrafts.get(activeMetricTableId),
+      assetType: els.metricAssetType.value,
+      dataLayer: els.metricDataLayer.value,
+      qualityScore: els.metricQualityScore.value,
+      slaAchievementRate: els.metricSlaRate.value,
+      downstreamReferences: els.metricDownstreamReferences.value,
+      accessHeat: els.metricAccessHeat.value,
+    });
+  }
+
+  function renderMetricEditor() {
+    const tables = editingItem?.physicalTables || [];
+    const hasTables = tables.length > 0;
+    els.editMetricTabs.hidden = !hasTables;
+    els.editMetricForm.hidden = !hasTables;
+    els.metricEmptyEditor.hidden = hasTables;
+    if (!hasTables) {
+      els.editMetricTabs.innerHTML = "";
+      return;
+    }
+    if (!tables.some((table) => table.id === activeMetricTableId)) activeMetricTableId = tables[0].id;
+    els.editMetricTabs.innerHTML = tables.map((table, index) => `
+      <button class="metric-tab ${table.id === activeMetricTableId ? "is-active" : ""}" type="button" data-metric-table-id="${escapeHtml(table.id)}">
+        <span>物理表 ${index + 1}</span><code>${escapeHtml(`${table.schemaName}.${table.tableName}`)}</code>
+      </button>
+    `).join("");
+    const table = tables.find((candidate) => candidate.id === activeMetricTableId);
+    const draft = metricDrafts.get(activeMetricTableId) || {};
+    els.metricAssetType.value = draft.assetType || "";
+    els.metricDataLayer.value = draft.dataLayer || "";
+    els.metricTotalSize.value = table?.totalSize || formatBytes(table?.totalBytes);
+    els.metricRowCount.value = formatMetricNumber(table?.exactRowCount);
+    els.metricQualityScore.value = inputMetricValue(draft.qualityScore);
+    els.metricSlaRate.value = inputMetricValue(draft.slaAchievementRate);
+    els.metricDownstreamReferences.value = inputMetricValue(draft.downstreamReferences);
+    els.metricAccessHeat.value = inputMetricValue(draft.accessHeat);
   }
 
   function renderRows(items) {
@@ -92,6 +168,16 @@
       els.pageNumber.textContent = `${payload.page} / ${payload.pages}`;
       els.previousPage.disabled = payload.page <= 1;
       els.nextPage.disabled = payload.page >= payload.pages;
+      if (pendingEditAssetCode) {
+        const target = payload.items.find((item) => item.assetCode === pendingEditAssetCode);
+        if (target) {
+          pendingEditAssetCode = "";
+          window.history.replaceState({}, "", "./metadata.html");
+          openEditor(target);
+        } else if (payload.total === 0) {
+          els.tableStatus.textContent = "未找到要编辑的元数据资产";
+        }
+      }
     } catch (error) {
       state.items = [];
       renderRows([]);
@@ -101,6 +187,17 @@
 
   function openEditor(item) {
     editingId = item.id;
+    editingItem = item;
+    activeMetricTableId = item.physicalTables[0]?.id || null;
+    metricDrafts = new Map(item.physicalTables.map((table) => [table.id, {
+      id: table.id,
+      assetType: table.assetType || "",
+      dataLayer: table.dataLayer || "",
+      qualityScore: inputMetricValue(table.qualityScore),
+      slaAchievementRate: inputMetricValue(table.slaAchievementRate),
+      downstreamReferences: inputMetricValue(table.downstreamReferences),
+      accessHeat: inputMetricValue(table.accessHeat),
+    }]));
     els.form.reset();
     els.form.elements.nameCn.value = item.nameCn || "";
     els.form.elements.l1Domain.value = item.l1Domain || "";
@@ -115,11 +212,12 @@
     els.editPhysicalTables.innerHTML = item.physicalTables.length
       ? item.physicalTables.map((table) => `<span class="physical-chip">${escapeHtml(`${table.schemaName}.${table.tableName}`)}</span>`).join("")
       : '<span class="muted">暂无关联物理表</span>';
+    renderMetricEditor();
     els.formMessage.textContent = "";
     els.dialog.showModal();
   }
 
-  function closeEditor() { editingId = null; els.dialog.close(); }
+  function closeEditor() { editingId = null; editingItem = null; activeMetricTableId = null; metricDrafts = new Map(); els.dialog.close(); }
   function showToast(message) { clearTimeout(toastTimer); els.toast.textContent = message; els.toast.classList.add("show"); toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2400); }
 
   function renderFields(columns) {
@@ -201,6 +299,16 @@
     els.saveEdit.textContent = "正在保存…";
     els.formMessage.textContent = "";
     const data = Object.fromEntries(new FormData(els.form).entries());
+    captureMetricDraft();
+    data.physicalMetrics = [...metricDrafts.values()].map((metrics) => ({
+      id: metrics.id,
+      assetType: metrics.assetType,
+      dataLayer: metrics.dataLayer,
+      qualityScore: metrics.qualityScore,
+      slaAchievementRate: metrics.slaAchievementRate,
+      downstreamReferences: metrics.downstreamReferences,
+      accessHeat: metrics.accessHeat,
+    }));
     try {
       const payload = await fetchJson(`/api/catalog/assets/${editingId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
@@ -235,6 +343,13 @@
     fieldViewer.physicalIndex = Number(button.dataset.physicalIndex);
     renderPhysicalTabs();
     loadFields();
+  });
+  els.editMetricTabs.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-metric-table-id]");
+    if (!button || button.dataset.metricTableId === activeMetricTableId) return;
+    captureMetricDraft();
+    activeMetricTableId = button.dataset.metricTableId;
+    renderMetricEditor();
   });
   els.searchInput.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.query = els.searchInput.value.trim(); state.page = 1; loadAssets(); }, 260); });
   els.onlineFilter.addEventListener("change", () => { state.online = els.onlineFilter.value; state.page = 1; loadAssets(); });
