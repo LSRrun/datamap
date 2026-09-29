@@ -129,6 +129,7 @@ function baseReport(options, source, extraction, plan) {
       assetsExisting: 0,
       physicalTablesCreated: 0,
       physicalTablesExisting: 0,
+      physicalTablesSchemaUpdated: 0,
       databaseAssociationConflicts: [],
     },
   };
@@ -195,14 +196,50 @@ async function importCatalog(client, source, plan, report) {
     report.import.assetsCreated = plan.assets.length - existingAssets.size;
 
     const existingPhysicalResult = await client.query(
-      `SELECT schema_name, table_name, asset_id
+      `SELECT id, schema_name, table_name, asset_id
        FROM catalog_physical_tables WHERE source_id = $1`,
       [sourceId]
     );
-    const existingPhysical = new Map(existingPhysicalResult.rows.map((row) => [
+    const existingRows = existingPhysicalResult.rows;
+    const existingPhysical = new Map(existingRows.map((row) => [
       `${row.schema_name}.${row.table_name}`,
       row,
     ]));
+    const plannedTargetCounts = new Map();
+    for (const table of plan.physicalTables) {
+      const assetId = String(assetIds.get(table.assetCode));
+      const matchKey = `${assetId}|${table.tableName.toUpperCase()}`;
+      plannedTargetCounts.set(matchKey, (plannedTargetCounts.get(matchKey) || 0) + 1);
+    }
+
+    for (const table of plan.physicalTables) {
+      const key = `${table.schemaName}.${table.tableName}`;
+      if (existingPhysical.has(key)) continue;
+      const assetId = String(assetIds.get(table.assetCode));
+      const matchKey = `${assetId}|${table.tableName.toUpperCase()}`;
+      if (plannedTargetCounts.get(matchKey) !== 1) continue;
+      const previous = existingRows.find((row) => (
+        String(row.asset_id) === assetId
+        && String(row.table_name).toUpperCase() === table.tableName.toUpperCase()
+        && !existingPhysical.has(key)
+      ));
+      if (!previous) continue;
+      const previousKey = `${previous.schema_name}.${previous.table_name}`;
+      await client.query(
+        `UPDATE catalog_physical_tables SET
+           schema_name = $1,
+           table_name = $2,
+           is_active = FALSE,
+           last_seen_at = NULL
+         WHERE id = $3`,
+        [table.schemaName, table.tableName, previous.id]
+      );
+      existingPhysical.delete(previousKey);
+      previous.schema_name = table.schemaName;
+      previous.table_name = table.tableName;
+      existingPhysical.set(key, previous);
+      report.import.physicalTablesSchemaUpdated += 1;
+    }
 
     for (const table of plan.physicalTables) {
       const key = `${table.schemaName}.${table.tableName}`;
@@ -259,7 +296,7 @@ async function main() {
     await client.connect();
     await importCatalog(client, source, plan, report);
     writeReport(options.report, report);
-    console.log(`导入完成：新增 ${report.import.assetsCreated} 条资产、${report.import.physicalTablesCreated} 张物理表`);
+    console.log(`导入完成：新增 ${report.import.assetsCreated} 条资产、${report.import.physicalTablesCreated} 张物理表，更新 ${report.import.physicalTablesSchemaUpdated} 条 Schema`);
     console.log(`报告：${options.report}`);
   } catch (error) {
     report.status = "failed";

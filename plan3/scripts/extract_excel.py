@@ -43,6 +43,21 @@ def clean_level(value):
     return LEVEL_PREFIX.sub("", normalize(value)).strip()
 
 
+def select_catalog_sheet(workbook):
+    if "模型目录" in workbook.sheetnames:
+        return workbook["模型目录"]
+    candidates = []
+    for sheet in workbook.worksheets:
+        headers = [normalize(cell.value) for cell in sheet[1]]
+        if all(name in headers for name in REQUIRED_CATALOG_HEADERS):
+            candidates.append(sheet)
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValueError("工作簿中未找到包含必要目录列的工作表")
+    raise ValueError("工作簿中存在多个目录工作表，请将目标工作表命名为“模型目录”")
+
+
 def split_physical_tables(value, default_schema):
     raw_parts = [part.strip() for part in PHYSICAL_SEPARATOR.split(normalize(value)) if part.strip()]
     unique_parts = list(dict.fromkeys(part.upper() for part in raw_parts))
@@ -86,7 +101,7 @@ def extract(workbook_path: Path) -> dict:
     # useful fields continue through column K. Normal mode recalculates the
     # real used range; read-only mode would silently omit "是否入湖" and "说明".
     workbook = load_workbook(workbook_path, read_only=False, data_only=True)
-    sheet = workbook["模型目录"]
+    sheet = select_catalog_sheet(workbook)
     rows = sheet.iter_rows(values_only=True)
     headers = [normalize(value) for value in next(rows)]
     positions = {name: headers.index(name) for name in HEADERS if name in headers}
@@ -125,9 +140,7 @@ def extract(workbook_path: Path) -> dict:
 
 def extract_catalog(workbook_path: Path, default_schema: str = "public") -> dict:
     workbook = load_workbook(workbook_path, read_only=False, data_only=True)
-    if "模型目录" not in workbook.sheetnames:
-        raise ValueError("工作簿缺少“模型目录”工作表")
-    sheet = workbook["模型目录"]
+    sheet = select_catalog_sheet(workbook)
     headers = [normalize(cell.value) for cell in sheet[1]]
     missing_headers = [name for name in REQUIRED_CATALOG_HEADERS if name not in headers]
     if missing_headers:
@@ -255,7 +268,7 @@ def extract_catalog(workbook_path: Path, default_schema: str = "public") -> dict
     return {
         "source": {
             "workbook": workbook_path.name,
-            "sheet": "模型目录",
+            "sheet": sheet.title,
             "lastDataRow": last_data_row,
             "defaultSchema": default_schema.upper(),
         },

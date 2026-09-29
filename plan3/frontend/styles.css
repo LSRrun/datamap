@@ -357,8 +357,8 @@ body.is-resizing-map, body.is-resizing-map * { cursor: ns-resize !important; use
 .map-status-select.is-filtered select { color: white; background: var(--ink); box-shadow: 0 5px 12px rgba(28,37,57,.15); }
 .map-status-select.is-filtered::after { color: rgba(255,255,255,.72); }
 .map-status-select option { color: var(--ink); background: white; }
-#dataMap { width: 100%; height: 100%; display: block; cursor: grab; }
-#dataMap.is-dragging { cursor: grabbing; }
+canvas#dataMap { width: 100%; height: 100%; display: block; cursor: grab; }
+canvas#dataMap.is-dragging { cursor: grabbing; }
 .map-tooltip {
   position: absolute;
   z-index: 4;
@@ -423,6 +423,55 @@ body.is-resizing-map, body.is-resizing-map * { cursor: ns-resize !important; use
 .map-caption span { color: var(--muted); font-size: 11px; }
 .map-hints { position: absolute; right: 15px; bottom: 14px; display: flex; gap: 6px; pointer-events: none; }
 .map-hints span { padding: 5px 8px; border: 1px solid rgba(227,232,241,.75); border-radius: 999px; color: #8b95a7; background: rgba(255,255,255,.72); font-size: 10px; backdrop-filter: blur(8px); }
+
+/* v2 drill-down business landscape */
+.map-heading { align-items: flex-end; }
+.map-heading p { max-width: 700px; }
+.landscape-legend { display: flex; align-items: center; gap: 14px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: #fafbfd; font-size: 11px; white-space: nowrap; }
+.landscape-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.landscape-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.landscape-legend .is-online { background: #36c995; }
+.landscape-legend .is-partial { background: #ffc43d; }
+.landscape-legend .is-offline { background: #7d8ca3; }
+.map-stage { height: auto; min-height: 520px; margin-top: 14px; overflow: hidden; touch-action: auto; border: 1px solid #e3e9f2; background: #f3f6fb; }
+.landscape-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 58px; padding: 10px 72px 10px 12px; border-bottom: 1px solid #e1e7f0; background: rgba(255,255,255,.93); }
+.landscape-breadcrumb { min-width: 0; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.landscape-breadcrumb::-webkit-scrollbar { display: none; }
+.landscape-breadcrumb button { flex: 0 0 auto; max-width: 210px; height: 32px; padding: 0 11px; overflow: hidden; border: 1px solid #d9e0ea; border-radius: 8px; color: #68758a; background: #f8fafc; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.landscape-breadcrumb button:hover { color: var(--primary); border-color: #bfc4fb; background: #f2f2ff; }
+.landscape-breadcrumb button.is-current { color: white; border-color: var(--primary); background: var(--primary); }
+.landscape-breadcrumb b { flex: 0 0 auto; color: #a8b1c0; font-size: 13px; }
+.landscape-toolbar .map-filter-bar { position: static; flex: 0 0 auto; box-shadow: none; background: #f5f7fa; backdrop-filter: none; }
+.landscape-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; padding: 10px 62px 10px 12px; }
+.landscape-stat { min-width: 0; padding: 10px 12px; border: 1px solid #dfe6ef; border-radius: 10px; background: rgba(255,255,255,.92); }
+.landscape-stat span, .landscape-stat small { display: block; overflow: hidden; color: #8994a7; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.landscape-stat strong { display: block; margin: 2px 0; color: #1e2a3d; font-size: 20px; line-height: 1.05; }
+.landscape-stat small { color: #a2aaba; }
+.drill-map { width: auto; height: auto; min-height: 390px; display: flex; align-content: stretch; flex-wrap: wrap; gap: 4px; padding: 0 58px 12px 12px; cursor: default; }
+.drill-card { --node-color: #5a5feb; min-width: 180px; min-height: 142px; flex: var(--weight, 1) 1 clamp(190px, calc(var(--weight, 1) * 5px), 360px); display: flex; flex-direction: column; justify-content: space-between; gap: 16px; padding: 14px; overflow: hidden; position: relative; border: 0; border-radius: 8px; color: white; background: #7d8ca3; text-align: left; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); transition: transform .16s ease, box-shadow .16s ease, filter .16s ease; }
+.drill-card:hover { z-index: 1; transform: translateY(-2px); filter: saturate(1.06); box-shadow: 0 12px 24px rgba(37,49,73,.18), inset 0 0 0 2px rgba(255,255,255,.78); }
+.drill-card:focus-visible { z-index: 2; outline: 3px solid rgba(90,95,235,.28); outline-offset: 2px; }
+.drill-card.is-online { background: #37ca98; }
+.drill-card.is-partial { background: #ffc43d; color: #4d3c0a; }
+.drill-card.is-offline { background: #7d8ca3; }
+.drill-card.is-entity { min-height: 182px; background: color-mix(in srgb, var(--node-color) 85%, #4f9de8); }
+.drill-card.is-missing { cursor: default; background: #a8b2c1; }
+.drill-card.is-missing:hover { transform: none; filter: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.drill-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.drill-card-level { font-size: 10px; font-weight: 800; letter-spacing: .11em; opacity: .78; }
+.drill-card-arrow { font-size: 18px; line-height: 1; opacity: .76; }
+.drill-card h3 { margin: 5px 0 0; overflow: hidden; font-size: clamp(15px, 1.2vw, 18px); line-height: 1.3; letter-spacing: -.02em; text-overflow: ellipsis; }
+.drill-card-code { display: -webkit-box; margin-top: 6px; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.45; opacity: .86; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.drill-card-meta { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.drill-card-count strong { display: block; font-size: 25px; line-height: 1; }
+.drill-card-count span, .drill-card-status { font-size: 11px; opacity: .85; }
+.drill-card-status { max-width: 58%; text-align: right; line-height: 1.45; }
+.drill-empty { min-height: 330px; display: grid; place-content: center; gap: 8px; padding: 32px; color: #8490a4; text-align: center; }
+.drill-empty[hidden] { display: none; }
+.drill-empty strong { color: #344055; font-size: 16px; }
+.map-stage .map-actions { top: 11px; right: 11px; flex-direction: column; padding: 3px; }
+.map-stage .map-actions .map-reset { width: 31px; height: 31px; margin: 0; padding: 0; border: 0; border-radius: 8px; font-size: 16px; }
+.map-stage .map-actions button:disabled { opacity: .35; cursor: not-allowed; }
 
 .catalog-panel { padding: 22px; }
 .catalog-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
@@ -695,6 +744,9 @@ body.asset-drawer-open { overflow: hidden; }
   .select-control { flex: 1; }
   .select-control select { width: 100%; }
   .view-switch { flex: 0 0 auto; }
+  .landscape-toolbar { align-items: flex-start; flex-direction: column; padding-right: 54px; }
+  .landscape-toolbar .map-filter-bar { width: fit-content; }
+  .landscape-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
@@ -712,15 +764,19 @@ body.asset-drawer-open { overflow: hidden; }
   .map-panel, .catalog-panel { border-radius: 17px; }
   .map-panel { padding: 16px 13px 13px; }
   .map-heading { display: block; }
-  .link-mode-control { justify-content: space-between; padding-top: 10px; }
-  .map-stage { height: 420px; }
-  .map-filter-bar { right: 12px; width: fit-content; max-width: calc(100% - 24px); }
+  .landscape-legend { width: 100%; justify-content: space-between; margin-top: 12px; padding: 8px; }
+  .map-stage { min-height: 520px; }
+  .landscape-toolbar { padding: 10px 50px 10px 10px; }
+  .landscape-toolbar .map-filter-bar { width: 100%; max-width: none; }
+  .landscape-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px 50px 8px 10px; }
+  .landscape-stat:last-child { grid-column: span 2; }
+  .drill-map { min-height: 340px; padding: 0 50px 10px 10px; }
+  .drill-card { min-width: 140px; min-height: 125px; flex-basis: 145px; padding: 12px; }
+  .drill-card.is-entity { min-height: 145px; }
+  .landscape-breadcrumb button { max-width: 150px; }
   .map-all-filter { padding: 0 10px; }
   .map-status-select select { min-width: 80px; padding-left: 9px; }
-  .map-actions { top: 60px; }
-  .map-caption { right: 12px; align-items: flex-start; flex-direction: column; gap: 2px; }
-  .map-hints { display: none; }
-  .map-actions span { display: none; }
+  .map-stage .map-actions { top: 10px; }
   .catalog-panel { padding: 16px 13px; }
   .toolbar-controls { flex-wrap: wrap; }
   .view-switch { display: none; }

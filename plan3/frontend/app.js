@@ -12,6 +12,9 @@
     view: "cards",
     linkMode: "l3",
     related: null,
+    landscapeDepth: 0,
+    drillAssetId: null,
+    drillPhysical: null,
     selectedTableId: null,
     assetDetail: null,
     openGroups: new Set(),
@@ -30,6 +33,9 @@
     mapAllData: document.getElementById("mapAllData"),
     mapOnlineFilter: document.getElementById("mapOnlineFilter"),
     mapLakeFilter: document.getElementById("mapLakeFilter"),
+    mapBreadcrumb: document.getElementById("mapBreadcrumb"),
+    mapScopeSummary: document.getElementById("mapScopeSummary"),
+    mapEmptyState: document.getElementById("mapEmptyState"),
     catalogGroups: document.getElementById("catalogGroups"),
     catalogTitle: document.getElementById("catalogTitle"),
     resultSummary: document.getElementById("resultSummary"),
@@ -202,6 +208,7 @@
     if (includeDomain && state.domain !== "all" && table.domain !== state.domain) return false;
     if (state.topic !== "all" && table.topic !== state.topic) return false;
     if (state.businessObject !== "all" && table.businessObject !== state.businessObject) return false;
+    if (state.drillAssetId && String(table.id) !== String(state.drillAssetId)) return false;
     if (state.related) {
       if (table.domain !== state.related.domain || table.topic !== state.related.topic) return false;
       if (state.related.type === "l3" && table.businessObject !== state.related.businessObject) return false;
@@ -252,14 +259,21 @@
       return { domain, topic, tables: groupTables };
     });
     const selectedDomain = state.domain === "all" ? null : domainByName.get(state.domain);
+    const selectedAsset = state.drillAssetId ? tableById.get(String(state.drillAssetId)) : null;
     const relatedTitle = state.related
       ? state.related.type === "l3"
         ? `同 L3 业务对象：${state.related.businessObject || "待完善"}`
         : `同 L2 主题域：${state.related.topic}`
       : null;
 
-    els.catalogTitle.textContent = relatedTitle || (selectedDomain ? selectedDomain.name : "全部数据表");
-    els.resultSummary.textContent = `共找到 ${tables.length} 张数据表，分布在 ${new Set(tables.map((item) => item.topic)).size} 个二级主题域`;
+    const scopeTitle = selectedAsset?.name
+      || (state.businessObject !== "all" ? state.businessObject : "")
+      || (state.topic !== "all" ? state.topic : "")
+      || selectedDomain?.name
+      || "全部数据表";
+    const physicalCount = tables.reduce((count, table) => count + physicalTableNames(table).length, 0);
+    els.catalogTitle.textContent = relatedTitle || scopeTitle;
+    els.resultSummary.textContent = `共找到 ${tables.length} 个 L4 数据资产，包含 ${physicalCount} 个实体表关联`;
     els.catalogGroups.classList.toggle("is-compact", state.view === "compact");
     els.catalogGroups.innerHTML = groups.map((group) => {
       const domain = domainByName.get(group.domain) || { color: "#5a5feb" };
@@ -297,6 +311,10 @@
     if (state.domain !== "all") filters.push({ key: "domain", label: `主题域：${state.domain}` });
     if (state.topic !== "all") filters.push({ key: "topic", label: `L2：${state.topic}` });
     if (state.businessObject !== "all") filters.push({ key: "businessObject", label: `L3：${state.businessObject}` });
+    if (state.drillAssetId) {
+      const asset = tableById.get(String(state.drillAssetId));
+      if (asset) filters.push({ key: "drillAsset", label: `L4：${asset.name}` });
+    }
     if (state.related) filters.push({
       key: "related",
       label: state.related.type === "l3"
@@ -318,17 +336,7 @@
   }
 
   function updateMapCaption(tables) {
-    els.mapCaptionTitle.textContent = state.related
-      ? state.related.type === "l3"
-        ? `L3 · ${state.related.businessObject || "待完善"}`
-        : `L2 · ${state.related.topic}`
-      : state.businessObject !== "all"
-        ? `L3 · ${state.businessObject}`
-        : state.topic !== "all"
-          ? `L2 · ${state.topic}`
-          : state.domain === "all" ? "全部主题域" : state.domain;
-    const linkLabel = state.linkMode === "l3" ? "L3 业务对象连线" : "L2 主题域连线";
-    els.mapCaptionMeta.textContent = `${tables.length} 张表 · ${linkLabel}`;
+    dataMap.render(tables);
   }
 
   function selectDomain(domain, options = {}) {
@@ -337,6 +345,9 @@
     state.domain = nextDomain;
     state.topic = "all";
     state.businessObject = "all";
+    state.drillAssetId = null;
+    state.drillPhysical = null;
+    state.landscapeDepth = nextDomain === "all" ? 0 : 1;
     if (nextDomain !== "all" && options.expandTree !== false) state.treeOpen.add(`d::${nextDomain}`);
     renderNavigation();
     renderCatalog();
@@ -350,6 +361,7 @@
     if (state.topic !== "all" && !topics.includes(state.topic)) {
       state.topic = "all";
       state.businessObject = "all";
+      state.drillAssetId = null;
     }
     els.topicFilter.innerHTML = `<option value="all">全部 L2</option>${topics.map((topic) =>
       `<option value="${escapeHtml(topic)}">${escapeHtml(topic)}</option>`
@@ -358,7 +370,10 @@
 
     const topicTables = domainTables.filter((table) => state.topic === "all" || table.topic === state.topic);
     const objects = [...new Set(topicTables.map((table) => table.businessObject || "待完善"))];
-    if (state.businessObject !== "all" && !objects.includes(state.businessObject)) state.businessObject = "all";
+    if (state.businessObject !== "all" && !objects.includes(state.businessObject)) {
+      state.businessObject = "all";
+      state.drillAssetId = null;
+    }
     els.businessObjectFilter.innerHTML = `<option value="all">全部 L3</option>${objects.map((object) =>
       `<option value="${escapeHtml(object)}">${escapeHtml(object)}</option>`
     ).join("")}`;
@@ -383,11 +398,15 @@
 
   function setHierarchyFilter(level, value) {
     state.related = null;
+    state.drillAssetId = null;
+    state.drillPhysical = null;
     if (level === "topic") {
       state.topic = value;
       state.businessObject = "all";
+      state.landscapeDepth = value === "all" ? (state.domain === "all" ? 0 : 1) : 2;
     } else {
       state.businessObject = value;
+      state.landscapeDepth = value === "all" ? (state.topic === "all" ? (state.domain === "all" ? 0 : 1) : 2) : 3;
     }
     renderCatalog();
   }
@@ -395,8 +414,9 @@
   function clearFilter(key) {
     if (key === "domain") return selectDomain("all");
     if (key === "query") { state.query = ""; els.searchInput.value = ""; }
-    if (key === "topic") { state.topic = "all"; state.businessObject = "all"; }
-    if (key === "businessObject") state.businessObject = "all";
+    if (key === "topic") { state.topic = "all"; state.businessObject = "all"; state.drillAssetId = null; state.landscapeDepth = state.domain === "all" ? 0 : 1; }
+    if (key === "businessObject") { state.businessObject = "all"; state.drillAssetId = null; state.landscapeDepth = state.topic === "all" ? (state.domain === "all" ? 0 : 1) : 2; }
+    if (key === "drillAsset") { state.drillAssetId = null; state.drillPhysical = null; state.landscapeDepth = 3; }
     if (key === "online") state.online = "all";
     if (key === "lake") state.lake = "all";
     if (key === "related") state.related = null;
@@ -410,6 +430,9 @@
     state.online = "all";
     state.lake = "all";
     state.related = null;
+    state.drillAssetId = null;
+    state.drillPhysical = null;
+    state.landscapeDepth = 0;
     els.searchInput.value = "";
     selectDomain("all");
   }
@@ -792,7 +815,7 @@
     });
   }
 
-  function openAssetDrawer(id) {
+  function openAssetDrawer(id, physicalIndex = 0) {
     const table = tableById.get(String(id));
     if (!table) return;
     els.drawer.classList.remove("is-open");
@@ -800,7 +823,7 @@
     state.selectedTableId = String(table.id);
     state.assetDetail = {
       tableId: String(table.id),
-      physicalIndex: 0,
+      physicalIndex: Math.max(0, Number(physicalIndex) || 0),
       preview: { status: "idle", page: 1, pageSize: 20 },
       fields: { status: "loading" },
     };
@@ -913,6 +936,7 @@
   function initMapResizer() {
     const stage = document.getElementById("mapStage");
     const handle = document.getElementById("mapResizeHandle");
+    if (!stage || !handle) return;
     const storageKey = "datamap.map.height.v1";
     const minHeight = 420;
     const maxHeight = 1200;
@@ -975,8 +999,202 @@
     });
   }
 
+  function createDrillMap(container) {
+    const backButton = document.getElementById("mapBack");
+    const levelNames = ["L1 领域", "L2 主题域", "L3 业务对象", "L4 数据资产", "实体表"];
+
+    function aggregateStatus(tables) {
+      const online = tables.filter((table) => table.online === "是").length;
+      if (tables.length && online === tables.length) return "is-online";
+      if (online > 0) return "is-partial";
+      return "is-offline";
+    }
+
+    function makeNodes(tables) {
+      if (state.landscapeDepth === 0) {
+        return groupOrdered(tables, (table) => table.domain).map(([label, nodeTables]) => ({
+          key: label, label, tables: nodeTables, level: "L1", weight: nodeTables.length,
+          color: domainByName.get(label)?.color || "#5a5feb",
+        }));
+      }
+      if (state.landscapeDepth === 1) {
+        return groupOrdered(tables, (table) => table.topic || "待分类").map(([label, nodeTables]) => ({
+          key: label, label, tables: nodeTables, level: "L2", weight: nodeTables.length,
+          color: domainByName.get(nodeTables[0]?.domain)?.color || "#5a5feb",
+        }));
+      }
+      if (state.landscapeDepth === 2) {
+        return groupOrdered(tables, (table) => table.businessObject || "待完善").map(([label, nodeTables]) => ({
+          key: label, label, tables: nodeTables, level: "L3", weight: nodeTables.length,
+          color: domainByName.get(nodeTables[0]?.domain)?.color || "#5a5feb",
+        }));
+      }
+      if (state.landscapeDepth === 3) {
+        return tables.map((table) => ({
+          key: String(table.id), label: table.name, tables: [table], table, level: "L4",
+          weight: Math.max(physicalTableNames(table).length, 1),
+          color: domainByName.get(table.domain)?.color || "#5a5feb",
+        }));
+      }
+      const asset = state.drillAssetId ? tableById.get(String(state.drillAssetId)) : null;
+      if (!asset || !tables.some((table) => String(table.id) === String(asset.id))) return [];
+      const names = physicalTableNames(asset);
+      if (!names.length) {
+        return [{ key: "missing", label: "实体表待补充", code: "当前 L4 尚未登记英文物理表名", tables: [asset], table: asset, level: "TABLE", weight: 1, missing: true, color: domainByName.get(asset.domain)?.color || "#5a5feb" }];
+      }
+      return names.map((name, index) => ({
+        key: `${asset.id}:${index}`, label: asset.name, code: name, tables: [asset], table: asset,
+        physicalIndex: index, level: "TABLE", weight: 1,
+        color: domainByName.get(asset.domain)?.color || "#5a5feb",
+      }));
+    }
+
+    function renderBreadcrumb() {
+      const parts = [{ depth: 0, label: "全部领域" }];
+      if (state.domain !== "all") parts.push({ depth: 1, label: state.domain });
+      if (state.topic !== "all") parts.push({ depth: 2, label: state.topic });
+      if (state.businessObject !== "all") parts.push({ depth: 3, label: state.businessObject });
+      if (state.drillAssetId) {
+        const asset = tableById.get(String(state.drillAssetId));
+        if (asset) parts.push({ depth: 4, label: asset.name });
+      }
+      els.mapBreadcrumb.innerHTML = parts.map((part, index) => `
+        ${index ? "<b>›</b>" : ""}
+        <button class="${part.depth === state.landscapeDepth ? "is-current" : ""}" type="button" data-map-depth="${part.depth}" title="${escapeHtml(part.label)}">${escapeHtml(part.label)}</button>
+      `).join("");
+    }
+
+    function renderSummary(tables, nodes) {
+      const physicalCount = tables.reduce((count, table) => count + physicalTableNames(table).length, 0);
+      const onlineCount = tables.filter((table) => table.online === "是").length;
+      const lakeCount = tables.filter((table) => table.inLake === "是").length;
+      const stats = [
+        ["当前层级", levelNames[state.landscapeDepth], "点击卡片继续向下"],
+        ["当前卡片", nodes.length, "本层可钻取节点"],
+        ["L4 数据资产", tables.length, "同步下方列表"],
+        ["已上线", onlineCount, `${tables.length ? Math.round(onlineCount / tables.length * 100) : 0}%`],
+        ["实体表关联", physicalCount, `${lakeCount} 个 L4 已入湖`],
+      ];
+      els.mapScopeSummary.innerHTML = stats.map(([label, value, hint]) => `
+        <div class="landscape-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(hint)}</small></div>
+      `).join("");
+    }
+
+    function cardHtml(node) {
+      const physicalCount = node.tables.reduce((count, table) => count + physicalTableNames(table).length, 0);
+      const onlineCount = node.tables.filter((table) => table.online === "是").length;
+      const isEntity = state.landscapeDepth === 4;
+      const countValue = isEntity ? 1 : state.landscapeDepth === 3 ? physicalCount : node.tables.length;
+      const countLabel = isEntity ? "实体表" : state.landscapeDepth === 3 ? "实体表" : "L4 资产";
+      const status = isEntity
+        ? (node.missing ? "未登记物理表" : `第 ${node.physicalIndex + 1} 张 · 点击查看详情`)
+        : `${onlineCount}/${node.tables.length} 已上线 · ${physicalCount} 张实体表`;
+      const classes = ["drill-card", aggregateStatus(node.tables), isEntity ? "is-entity" : "", node.missing ? "is-missing" : ""].filter(Boolean).join(" ");
+      return `
+        <button class="${classes}" type="button" data-drill-key="${escapeHtml(node.key)}" ${node.missing ? "aria-disabled=\"true\"" : ""}
+          style="--weight:${Math.max(1, Math.min(node.weight, 60))};--node-color:${escapeHtml(node.color)}">
+          <span>
+            <span class="drill-card-head"><span class="drill-card-level">${escapeHtml(node.level)}</span><span class="drill-card-arrow">${node.missing ? "—" : "↘"}</span></span>
+            <h3 title="${escapeHtml(node.label)}">${escapeHtml(node.label)}</h3>
+            ${node.code ? `<code class="drill-card-code" title="${escapeHtml(node.code)}">${escapeHtml(node.code)}</code>` : ""}
+          </span>
+          <span class="drill-card-meta">
+            <span class="drill-card-count"><strong>${countValue}</strong><span>${countLabel}</span></span>
+            <span class="drill-card-status">${escapeHtml(status)}</span>
+          </span>
+        </button>
+      `;
+    }
+
+    function render(tables = filteredTables()) {
+      const nodes = makeNodes(tables);
+      renderBreadcrumb();
+      renderSummary(tables, nodes);
+      container.dataset.depth = String(state.landscapeDepth);
+      container.innerHTML = nodes.map(cardHtml).join("");
+      container.hidden = nodes.length === 0;
+      els.mapEmptyState.hidden = nodes.length !== 0;
+      if (backButton) backButton.disabled = state.landscapeDepth === 0;
+    }
+
+    function moveToDepth(depth) {
+      const nextDepth = Math.max(0, Math.min(Number(depth) || 0, 4));
+      state.related = null;
+      state.drillPhysical = null;
+      if (nextDepth === 0) {
+        state.domain = "all";
+        state.topic = "all";
+        state.businessObject = "all";
+        state.drillAssetId = null;
+      } else if (nextDepth === 1) {
+        state.topic = "all";
+        state.businessObject = "all";
+        state.drillAssetId = null;
+      } else if (nextDepth === 2) {
+        state.businessObject = "all";
+        state.drillAssetId = null;
+      } else if (nextDepth === 3) {
+        state.drillAssetId = null;
+      }
+      state.landscapeDepth = nextDepth;
+      renderNavigation();
+      renderCatalog();
+    }
+
+    container.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-drill-key]");
+      if (!button || button.getAttribute("aria-disabled") === "true") return;
+      const tables = filteredTables();
+      const node = makeNodes(tables).find((item) => item.key === button.dataset.drillKey);
+      if (!node) return;
+      state.related = null;
+      state.drillPhysical = null;
+      if (state.landscapeDepth === 0) {
+        state.domain = node.label;
+        state.topic = "all";
+        state.businessObject = "all";
+        state.drillAssetId = null;
+        state.landscapeDepth = 1;
+      } else if (state.landscapeDepth === 1) {
+        state.topic = node.label;
+        state.businessObject = "all";
+        state.drillAssetId = null;
+        state.landscapeDepth = 2;
+      } else if (state.landscapeDepth === 2) {
+        state.businessObject = node.label;
+        state.drillAssetId = null;
+        state.landscapeDepth = 3;
+      } else if (state.landscapeDepth === 3) {
+        state.drillAssetId = String(node.table.id);
+        state.landscapeDepth = 4;
+      } else {
+        state.drillPhysical = node.code;
+        openAssetDrawer(node.table.id, node.physicalIndex);
+        return;
+      }
+      renderNavigation();
+      renderCatalog();
+    });
+
+    els.mapBreadcrumb.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-map-depth]");
+      if (button) moveToDepth(Number(button.dataset.mapDepth));
+    });
+    if (backButton) backButton.addEventListener("click", () => moveToDepth(state.landscapeDepth - 1));
+
+    return {
+      render,
+      moveToDepth,
+      focusDomain() { render(); },
+      focusTable() { render(); },
+      selectTable() {},
+      zoomBy() {},
+    };
+  }
+
   const dataMap = (() => {
     const canvas = document.getElementById("dataMap");
+    if (!(canvas instanceof HTMLCanvasElement)) return createDrillMap(canvas);
     const stage = document.getElementById("mapStage");
     const tooltip = document.getElementById("mapTooltip");
     const ctx = canvas.getContext("2d");
@@ -1314,6 +1532,9 @@
     state.domain = table.domain;
     state.topic = table.topic || "all";
     state.businessObject = table.businessObject || "all";
+    state.drillAssetId = String(table.id);
+    state.drillPhysical = null;
+    state.landscapeDepth = 4;
     state.query = "";
     state.online = "all";
     state.lake = "all";
@@ -1321,7 +1542,7 @@
     els.searchInput.value = "";
     renderNavigation();
     renderCatalog();
-    openDrawer(table.id);
+    openAssetDrawer(table.id);
     dataMap.focusTable(table.id);
     closeSidebar();
   }
@@ -1372,8 +1593,6 @@
     }));
     document.getElementById("clearFilters").addEventListener("click", clearAllFilters);
     document.getElementById("mapReset").addEventListener("click", () => selectDomain("all", { closeMobile: false }));
-    document.getElementById("mapZoomIn").addEventListener("click", () => dataMap.zoomBy(1.18));
-    document.getElementById("mapZoomOut").addEventListener("click", () => dataMap.zoomBy(.84));
     document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
     els.assetDrawerScrim.addEventListener("click", () => closeAssetDrawer());
     document.getElementById("openSidebar").addEventListener("click", openSidebar);

@@ -14,7 +14,7 @@
       type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%235d5fef'/%3E%3Cstop offset='1' stop-color='%2309b8d1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Cpath d='M18 20h28v8H18zm0 12h18v8H18zm22 0h6v8h-6z' fill='white'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260924-3" />
+    <link rel="stylesheet" href="./styles.css?v=20260928-v2-1" />
   </head>
   <body>
     <div class="app-shell">
@@ -121,49 +121,46 @@
             <div>
               <span class="section-kicker">DATA LANDSCAPE</span>
               <h2>业务主题分布</h2>
+              <p>点击卡片按 L1 → L2 → L3 → L4 → 实体表逐级钻取，下方数据表会同步筛选。</p>
             </div>
-            <div class="link-mode-control">
-              <span>连线关系</span>
-              <div class="link-mode-switch" role="group" aria-label="数据表连线层级">
-                <button class="is-active" type="button" data-link-mode="l3">L3 业务对象</button>
-                <button type="button" data-link-mode="l2">L2 主题域</button>
-              </div>
+            <div class="landscape-legend" aria-label="线上状态图例">
+              <span><i class="is-online"></i>全部上线</span>
+              <span><i class="is-partial"></i>部分上线</span>
+              <span><i class="is-offline"></i>尚未上线</span>
             </div>
           </div>
           <div class="map-stage" id="mapStage">
-            <div class="map-filter-bar" aria-label="数据表状态筛选">
-              <button class="map-all-filter is-active" id="mapAllData" type="button">全部数据</button>
-              <label class="map-status-select">
-                <select id="mapOnlineFilter" aria-label="线上化状态">
-                  <option value="all">线上化</option>
-                  <option value="是">已上线</option>
-                  <option value="否">未上线</option>
-                  <option value="unknown">待确认</option>
-                </select>
-              </label>
-              <label class="map-status-select">
-                <select id="mapLakeFilter" aria-label="入湖状态">
-                  <option value="all">入湖</option>
-                  <option value="是">已入湖</option>
-                  <option value="否">未入湖</option>
-                  <option value="unknown">待确认</option>
-                </select>
-              </label>
+            <div class="landscape-toolbar">
+              <nav class="landscape-breadcrumb" id="mapBreadcrumb" aria-label="业务主题钻取路径"></nav>
+              <div class="map-filter-bar" aria-label="数据表状态筛选">
+                <button class="map-all-filter is-active" id="mapAllData" type="button">全部状态</button>
+                <label class="map-status-select">
+                  <select id="mapOnlineFilter" aria-label="线上化状态">
+                    <option value="all">线上化</option>
+                    <option value="是">已上线</option>
+                    <option value="否">未上线</option>
+                    <option value="unknown">待确认</option>
+                  </select>
+                </label>
+                <label class="map-status-select">
+                  <select id="mapLakeFilter" aria-label="入湖状态">
+                    <option value="all">入湖</option>
+                    <option value="是">已入湖</option>
+                    <option value="否">未入湖</option>
+                    <option value="unknown">待确认</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            <canvas id="dataMap" aria-label="数据表主题分布交互图"></canvas>
-            <div class="map-tooltip" id="mapTooltip" role="status"></div>
-            <div class="map-actions" aria-label="数据地图缩放控制">
-              <button id="mapZoomOut" type="button" aria-label="缩小数据地图">−</button>
-              <span id="mapZoomLevel">100%</span>
-              <button id="mapZoomIn" type="button" aria-label="放大数据地图">＋</button>
-              <button class="map-reset" id="mapReset" type="button">全景</button>
+            <div class="landscape-summary" id="mapScopeSummary" aria-live="polite"></div>
+            <div class="drill-map" id="dataMap" aria-label="业务主题分布钻取图"></div>
+            <div class="drill-empty" id="mapEmptyState" hidden>
+              <strong>当前层级没有匹配的数据</strong>
+              <span>可以清除状态筛选或返回上一级继续浏览。</span>
             </div>
-            <div class="map-caption">
-              <strong id="mapCaptionTitle">全部主题域</strong>
-              <span id="mapCaptionMeta">正在加载数据分布</span>
-            </div>
-            <div class="map-hints" aria-hidden="true">
-              <span>拖拽平移</span><span>滚轮缩放</span><span>点击节点</span>
+            <div class="map-actions" aria-label="主题分布钻取控制">
+              <button id="mapBack" type="button" aria-label="返回上一级">‹</button>
+              <button class="map-reset" id="mapReset" type="button" aria-label="返回全部领域">↻</button>
             </div>
             <aside class="detail-drawer" id="detailDrawer" aria-hidden="true" aria-labelledby="drawerTitle">
               <button class="detail-close" id="closeDrawer" type="button" aria-label="关闭详情">
@@ -172,10 +169,6 @@
               <div class="drawer-domain" id="drawerDomain">数据表详情</div>
               <div class="drawer-body" id="drawerBody"></div>
             </aside>
-          </div>
-          <div class="map-resize-handle" id="mapResizeHandle" role="separator" aria-label="调整业务主题分布图高度"
-            aria-orientation="horizontal" aria-valuemin="420" aria-valuemax="1200" tabindex="0" title="向下拖动放大分布图">
-            <i aria-hidden="true"></i><span>拖动调整高度</span>
           </div>
         </section>
 
@@ -271,6 +264,6 @@
     </div>
 
     <script src="./data.js"></script>
-    <script src="./app.js?v=20260924-3"></script>
+    <script src="./app.js?v=20260928-v2-1"></script>
   </body>
 </html>
