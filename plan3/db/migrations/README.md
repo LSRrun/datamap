@@ -24,3 +24,5 @@ CATALOG_DATABASE_URL='postgresql://user:password@host:5432/datamap_catalog' npm 
 - `002_column_sync_state.sql`：为字段增加在线状态和最近发现时间，用于字段结构同步与软下线。
 - `003_physical_table_metrics.sql`：为物理表增加存储量、精确行数和可维护的资产指标。
 - `004_physical_table_labels.sql`：为物理表增加 Excel 资产类型和数据分层标签。
+- `005_dynamic_catalog_hierarchy.sql`：新增可配置层级、目录节点和资产归属关系，并迁移现有 L1/L2/L3 目录。
+- `006_data_table_level_and_entities.sql`：补齐 Excel 中的 L4 数据表层，将 272 个数据表迁移为目录节点，并把实体表作为数据表下的终端对象展示和维护。
