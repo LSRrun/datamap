@@ -26,3 +26,4 @@ CATALOG_DATABASE_URL='postgresql://user:password@host:5432/datamap_catalog' npm 
 - `004_physical_table_labels.sql`：为物理表增加 Excel 资产类型和数据分层标签。
 - `005_dynamic_catalog_hierarchy.sql`：新增可配置层级、目录节点和资产归属关系，并迁移现有 L1/L2/L3 目录。
 - `006_data_table_level_and_entities.sql`：补齐 Excel 中的 L4 数据表层，将 272 个数据表迁移为目录节点，并把实体表作为数据表下的终端对象展示和维护。
+- `007_encrypted_data_source_credentials.sql`：使用独立凭据表保存业务数据源密码的 AES-256-GCM 密文、随机 IV、认证标签和密钥版本；主密钥不入库。

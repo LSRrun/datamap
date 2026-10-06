@@ -65,6 +65,26 @@ CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_ca
 
 该无密码连接仅适用于当前本机开发实例。服务器环境必须使用独立密码或密钥服务，不能照搬本地认证方式。
 
+## 业务数据源密码加密存储
+
+业务 PostgreSQL 密码使用 AES-256-GCM 加密后保存在元数据仓库的 `data_source_credentials` 表中。数据库只保存密文、随机 IV、认证标签和密钥版本；用于解密的 32 字节主密钥必须通过服务端环境变量提供，不能写入数据库、代码仓库或浏览器。
+
+首次部署生成主密钥：
+
+```bash
+openssl rand -base64 32
+```
+
+启动服务、保存连接和执行同步时使用同一个主密钥：
+
+```bash
+export DATAMAP_CREDENTIAL_MASTER_KEY='<32 字节密钥的 Base64 或 64 位十六进制编码>'
+export CATALOG_DATABASE_URL='postgresql://user:password@host:5432/datamap_catalog'
+npm start
+```
+
+执行 `007_encrypted_data_source_credentials.sql` 后，需要在设置页面重新输入并保存一次业务数据库密码。后续连接测试、心跳重连、数据预览和 `sync:catalog` 都从元数据仓库读取并在服务进程内解密。主密钥丢失后已有密文无法恢复；更换主密钥前必须先实现密钥轮换或重新保存密码。
+
 ## Excel 目录导入
 
 导入脚本需要 Python 3 和 `openpyxl`：
@@ -98,6 +118,7 @@ CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_ca
 npm run db:migrate
 
 CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog' \
+DATAMAP_CREDENTIAL_MASTER_KEY='<主密钥>' \
 npm run sync:catalog -- --dry-run
 ```
 
@@ -105,10 +126,11 @@ npm run sync:catalog -- --dry-run
 
 ```bash
 CATALOG_DATABASE_URL='postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog' \
+DATAMAP_CREDENTIAL_MASTER_KEY='<主密钥>' \
 npm run sync:catalog
 ```
 
-同步脚本只读取业务 PostgreSQL 的 `pg_catalog` 和 `information_schema`，将表、字段、类型、主键、备注、结构指纹和在线状态写入元数据仓库。macOS 本地密码从钥匙串读取，不会写入报告；结果保存在 `.data/catalog-sync-report.json`。
+同步脚本从元数据仓库读取业务数据源配置和加密密码，只在进程内使用主密钥解密；随后读取业务 PostgreSQL 的 `pg_catalog` 和 `information_schema`，将表、字段、类型、主键、备注、结构指纹和在线状态写入元数据仓库。密码不会写入报告，结果保存在 `.data/catalog-sync-report.json`。
 
 ## 功能
 
@@ -127,7 +149,7 @@ npm run sync:catalog
 - 当前选中的数据表会在 Data Catalog 中显示主题色高亮外圈
 - 顶部“设置”进入数据库连接页，支持测试并持久保存 PostgreSQL 连接
 - 保存后由本机服务端连接池持续保持连接，每 15 秒执行心跳检查，断线后自动重连，服务重启后自动恢复
-- PostgreSQL 密码保存在 macOS 钥匙串中；`.data/postgres-connection.json` 仅保存非敏感连接参数，且不会写入浏览器存储
+- PostgreSQL 密码以 AES-256-GCM 密文保存在元数据仓库中；主密钥仅由服务端环境变量提供，`.data/postgres-connection.json` 只作为非敏感兼容配置
 - 数据表详情支持从已连接 PostgreSQL 只读分页查询当前物理表，并可在侧边栏中翻页、刷新和横向查看字段
 - 字段同步后，详情侧边栏自动展示当前物理表的字段名、类型、可空性、主键和字段备注
 - 详情侧边栏按当前物理表展示质量分、SLA、存储量、精确数据行数、下游引用和访问热度；存储量通过 `pg_size_pretty(pg_total_relation_size(...))`、数据行数通过只读 `COUNT(*)` 按需计算并缓存到元数据仓库

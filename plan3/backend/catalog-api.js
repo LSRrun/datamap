@@ -1,6 +1,11 @@
 "use strict";
 
 const { Pool } = require("pg");
+const {
+  loadSourceConfig,
+  loadSourceConnection,
+  saveSourceConnection,
+} = require("./credential-store");
 
 const LOCAL_CATALOG_DATABASE_URL = "postgresql://datamap_catalog_app@127.0.0.1:5432/datamap_catalog";
 const MAX_BODY_BYTES = 32 * 1024;
@@ -174,6 +179,27 @@ function normalizeAssetInput(body) {
 function createCatalogApi() {
   const pool = new Pool(catalogPoolConfig());
   pool.on("error", (error) => console.error(`元数据仓库连接异常：${safeError(error)}`));
+
+  async function withCatalogClient(callback) {
+    const client = await pool.connect();
+    try {
+      return await callback(client);
+    } finally {
+      client.release();
+    }
+  }
+
+  function getDefaultSourceConfig() {
+    return withCatalogClient((client) => loadSourceConfig(client));
+  }
+
+  function getSourceConnection(config) {
+    return withCatalogClient((client) => loadSourceConnection(client, config));
+  }
+
+  function storeSourceConnection(config, password) {
+    return withCatalogClient((client) => saveSourceConnection(client, config, password));
+  }
 
   async function hierarchyPath(client, nodeId) {
     const result = await client.query(`
@@ -978,6 +1004,9 @@ function createCatalogApi() {
   return {
     handle,
     findPreviewTarget,
+    getDefaultSourceConfig,
+    getSourceConnection,
+    storeSourceConnection,
     updatePhysicalTableTechnicalMetrics,
     close: () => pool.end(),
   };

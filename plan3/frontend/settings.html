@@ -53,7 +53,7 @@
 
           <div class="settings-security-note">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.8 8 7 10 4.2-2 7-5.4 7-10V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>
-            <div><strong>凭据保护</strong><p>密码保存在 macOS 钥匙串中，不会写入浏览器或项目配置文件。</p></div>
+            <div><strong>凭据保护</strong><p>密码经 AES-256-GCM 加密后保存到元数据仓库，主密钥仅由服务端环境变量提供。</p></div>
           </div>
         </aside>
 

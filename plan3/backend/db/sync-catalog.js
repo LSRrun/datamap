@@ -3,13 +3,11 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
 const { Client } = require("pg");
+const { loadSourceConnection } = require("../credential-store");
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
-const SOURCE_CONFIG_FILE = path.join(PROJECT_ROOT, ".data", "postgres-connection.json");
 const REPORT_FILE = path.join(PROJECT_ROOT, ".data", "catalog-sync-report.json");
-const KEYCHAIN_SERVICE = "com.dongpeng.datamap.postgres";
 const COLUMN_BATCH_SIZE = 500;
 
 function cleanText(value, maxLength = 2048) {
@@ -22,29 +20,6 @@ function safeError(error) {
     .replace(/password=[^\s]+/gi, "password=***");
 }
 
-function readSourceConfig() {
-  if (!fs.existsSync(SOURCE_CONFIG_FILE)) throw new Error("尚未保存 PostgreSQL 数据源配置");
-  const config = JSON.parse(fs.readFileSync(SOURCE_CONFIG_FILE, "utf8"));
-  const required = ["host", "port", "database", "username"];
-  const missing = required.filter((key) => !cleanText(config[key]));
-  if (missing.length) throw new Error(`数据源配置缺少：${missing.join("、")}`);
-  return config;
-}
-
-function sourcePassword(config) {
-  const environmentPassword = String(process.env.SOURCE_DATABASE_PASSWORD || "");
-  if (environmentPassword) return environmentPassword;
-  if (process.platform !== "darwin" || !config.credentialAccount) return "";
-  try {
-    return execFileSync("/usr/bin/security", [
-      "find-generic-password", "-a", config.credentialAccount,
-      "-s", KEYCHAIN_SERVICE, "-w",
-    ], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch (_) {
-    return "";
-  }
-}
-
 function sourceConnectionConfig(config) {
   const sslMode = cleanText(config.sslMode, 20).toLowerCase();
   return {
@@ -52,7 +27,7 @@ function sourceConnectionConfig(config) {
     port: Number(config.port),
     database: cleanText(config.database, 120),
     user: cleanText(config.username, 120),
-    password: sourcePassword(config),
+    password: String(config.password || ""),
     ssl: sslMode === "disable" ? false : { rejectUnauthorized: sslMode === "verify" },
     application_name: "dongpeng_datamap_catalog_sync",
     connectionTimeoutMillis: 15_000,
@@ -341,15 +316,17 @@ function writeReport(report) {
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
-  const sourceConfig = readSourceConfig();
   const catalog = new Client(catalogConnectionConfig());
-  const source = new Client(sourceConnectionConfig(sourceConfig));
+  let source;
   let report;
   try {
     await catalog.connect();
+    const sourceConfig = await loadSourceConnection(catalog);
+    if (!sourceConfig) throw new Error("元数据仓库中没有已启用的业务数据源配置");
     const targets = await loadTargets(catalog, sourceConfig);
     const sourceIds = [...new Set(targets.map((target) => target.sourceId))];
     if (sourceIds.length !== 1) throw new Error("当前同步范围包含多个数据源，无法安全执行");
+    source = new Client(sourceConnectionConfig(sourceConfig));
     await source.connect();
     const metadata = await readSourceMetadata(source, targets);
     report = await synchronize(catalog, source, sourceIds[0], targets, metadata, dryRun);
@@ -361,7 +338,7 @@ async function main() {
     writeReport(report);
     throw error;
   } finally {
-    await source.end().catch(() => {});
+    if (source) await source.end().catch(() => {});
     await catalog.end().catch(() => {});
   }
 }

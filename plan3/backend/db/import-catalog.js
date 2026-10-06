@@ -52,8 +52,6 @@ function sourceConfig(filePath) {
     username: String(input.username).trim(),
     schema: String(input.schema || "public").trim(),
     sslMode: String(input.sslMode || "disable").trim(),
-    credentialProvider: process.platform === "darwin" ? "keychain" : "env",
-    credentialRef: String(input.credentialAccount || "").trim() || null,
   };
 }
 
@@ -145,7 +143,7 @@ async function upsertDataSource(client, source) {
     `INSERT INTO data_sources (
        name, type, host, port, database_name, username, default_schema, ssl_mode,
        credential_provider, credential_ref, enabled, sync_interval_minutes
-     ) VALUES ($1, 'postgresql', $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 60)
+     ) VALUES ($1, 'postgresql', $2, $3, $4, $5, $6, $7, 'none', NULL, TRUE, 60)
      ON CONFLICT (name) DO UPDATE SET
        host = EXCLUDED.host,
        port = EXCLUDED.port,
@@ -153,13 +151,11 @@ async function upsertDataSource(client, source) {
        username = EXCLUDED.username,
        default_schema = EXCLUDED.default_schema,
        ssl_mode = EXCLUDED.ssl_mode,
-       credential_provider = EXCLUDED.credential_provider,
-       credential_ref = EXCLUDED.credential_ref,
        enabled = TRUE
      RETURNING id`,
     [
       source.name, source.host, source.port, source.database, source.username,
-      source.schema, source.sslMode, source.credentialProvider, source.credentialRef,
+      source.schema, source.sslMode,
     ]
   );
   return result.rows[0].id;

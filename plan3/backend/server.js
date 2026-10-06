@@ -3,7 +3,6 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
 const { Client, Pool } = require("pg");
 const { createCatalogApi } = require("./catalog-api");
 const { createTablePreviewApi } = require("./table-preview-api");
@@ -15,7 +14,6 @@ const FRONTEND_ROOT = path.join(PROJECT_ROOT, "frontend");
 const MAX_BODY_BYTES = 16 * 1024;
 const DATA_DIR = path.join(PROJECT_ROOT, ".data");
 const CONNECTION_FILE = path.join(DATA_DIR, "postgres-connection.json");
-const KEYCHAIN_SERVICE = "com.dongpeng.datamap.postgres";
 const HEARTBEAT_INTERVAL_MS = 15 * 1000;
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -109,7 +107,7 @@ function publicConfig(config) {
     username: cleanText(config.username),
     sslMode: ["disable", "verify", "require"].includes(config.sslMode) ? config.sslMode : "disable",
     timeout: Math.min(Math.max(Number(config.timeout) || 10, 3), 30),
-    hasPassword: Boolean(config.credentialAccount),
+    hasPassword: Boolean(config.hasPassword),
   };
 }
 
@@ -121,41 +119,13 @@ function sameConnectionIdentity(left, right) {
     && cleanText(left.username) === cleanText(right.username);
 }
 
-function resolvedInput(input) {
+async function resolvedInput(input) {
   const next = { ...input };
   if (!String(next.password ?? "") && sameConnectionIdentity(next, savedConfig)) {
-    next.password = readCredential(savedConfig);
+    const stored = await catalogApi.getSourceConnection(savedConfig);
+    next.password = stored?.password || "";
   }
   return next;
-}
-
-function credentialAccount(config) {
-  return `${cleanText(config.username)}@${cleanText(config.host)}:${Number(config.port)}/${cleanText(config.database)}`.slice(0, 255);
-}
-
-function readCredential(config) {
-  const account = cleanText(config?.credentialAccount) || credentialAccount(config || {});
-  if (!account) return "";
-  try {
-    return execFileSync("/usr/bin/security", ["find-generic-password", "-a", account, "-s", KEYCHAIN_SERVICE, "-w"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch (_) {
-    return "";
-  }
-}
-
-function saveCredential(config, password) {
-  if (!password) return;
-  try {
-    execFileSync("/usr/bin/security", [
-      "add-generic-password", "-U", "-a", config.credentialAccount,
-      "-s", KEYCHAIN_SERVICE, "-w", password,
-    ], { stdio: ["ignore", "ignore", "pipe"] });
-  } catch (_) {
-    throw new Error("无法将数据库密码保存到 macOS 钥匙串，请确认钥匙串可用");
-  }
 }
 
 function persistentConfig(input) {
@@ -167,9 +137,9 @@ function persistentConfig(input) {
     database: normalized.database,
     schema: cleanText(input.schema, 80) || "public",
     username: normalized.user,
-    credentialAccount: normalized.password ? credentialAccount(input) : "",
     sslMode: ["disable", "verify", "require"].includes(input.sslMode) ? input.sslMode : "disable",
     timeout: Math.min(Math.max(Number(input.timeout) || 10, 3), 30),
+    hasPassword: Boolean(normalized.password || input.hasPassword),
     savedAt: new Date().toISOString(),
   };
 }
@@ -274,7 +244,9 @@ async function heartbeat() {
   if (!savedConfig) return;
   try {
     if (!activePool) {
-      await activateConnection({ ...savedConfig, password: readCredential(savedConfig) }, null);
+      const runtimeConfig = await catalogApi.getSourceConnection(savedConfig);
+      if (!runtimeConfig) throw new Error("元数据仓库中没有可用的业务数据源配置");
+      await activateConnection(runtimeConfig, null);
       return;
     }
     await activePool.query("SELECT 1");
@@ -296,7 +268,9 @@ async function getSourcePool() {
   if (activePool) return activePool;
   if (!savedConfig) return null;
   try {
-    await activateConnection({ ...savedConfig, password: readCredential(savedConfig) }, null);
+    const runtimeConfig = await catalogApi.getSourceConnection(savedConfig);
+    if (!runtimeConfig) return null;
+    await activateConnection(runtimeConfig, null);
     return activePool;
   } catch (error) {
     markDisconnected(error);
@@ -307,7 +281,7 @@ async function getSourcePool() {
 async function testPostgres(request, response) {
   let client;
   try {
-    const input = resolvedInput(await readJsonBody(request));
+    const input = await resolvedInput(await readJsonBody(request));
     client = new Client(connectionConfig(input));
     await client.connect();
     const result = await client.query("SELECT current_database() AS database, current_user AS username, version() AS version");
@@ -325,22 +299,26 @@ async function testPostgres(request, response) {
 async function savePostgres(request, response) {
   let verified;
   try {
-    const input = resolvedInput(await readJsonBody(request));
+    const input = await resolvedInput(await readJsonBody(request));
     const config = persistentConfig(input);
     verified = await createVerifiedPool(input);
-    saveCredential(config, input.password);
-    saveConfig(config);
+    const storedConfig = await catalogApi.storeSourceConnection(config, input.password || undefined);
+    try {
+      saveConfig(storedConfig);
+    } catch (error) {
+      console.error(`写入兼容数据源配置失败：${safeError(error)}`);
+    }
     const serverInfo = verified.server;
     const previousPool = activePool;
     activePool = verified.pool;
     verified = null;
-    savedConfig = config;
+    savedConfig = storedConfig;
     connectionState.lastConnectedAt = null;
     markConnected(serverInfo);
     if (previousPool) await previousPool.end().catch(() => {});
     json(response, 200, {
       ...statusPayload(),
-      message: "配置已保存，PostgreSQL 将持续保持连接并在服务启动后自动重连。",
+      message: "配置和加密凭据已保存，PostgreSQL 将持续保持连接并在服务启动后自动重连。",
       server: serverInfo,
     });
   } catch (error) {
@@ -405,11 +383,19 @@ server.listen(PORT, HOST, () => {
   console.log(`东鹏数据地图已启动：http://${HOST}:${PORT}`);
 });
 
-savedConfig = loadSavedConfig();
-if (savedConfig) {
-  connectionState.status = "reconnecting";
-  heartbeat().catch((error) => markDisconnected(error));
+async function initializeSourceConnection() {
+  try {
+    savedConfig = await catalogApi.getDefaultSourceConfig() || loadSavedConfig();
+    if (!savedConfig) return;
+    connectionState.status = "reconnecting";
+    await heartbeat();
+  } catch (error) {
+    markDisconnected(error);
+    console.error(`初始化 PostgreSQL 数据源失败：${safeError(error)}`);
+  }
 }
+
+initializeSourceConnection().catch((error) => markDisconnected(error));
 startHeartbeat();
 
 async function shutdown() {
