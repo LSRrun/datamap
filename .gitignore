@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+.data/
+.venv/
+__pycache__/
+*.py[cod]
+plan1/
+plan2/
+plan4/
