@@ -1,0 +1,65 @@
+services:
+  catalog-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: datamap_catalog
+      POSTGRES_USER: datamap_catalog_app
+      POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:?CATALOG_DB_PASSWORD is required}
+    volumes:
+      - datamap_catalog_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U datamap_catalog_app -d datamap_catalog
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - datamap_internal
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 58973
+      CATALOG_DATABASE_URL: postgresql://datamap_catalog_app:${CATALOG_DB_PASSWORD}@catalog-db:5432/datamap_catalog
+      CATALOG_DATABASE_SSL_MODE: disable
+      DATAMAP_CREDENTIAL_MASTER_KEY: ${DATAMAP_CREDENTIAL_MASTER_KEY:?DATAMAP_CREDENTIAL_MASTER_KEY is required}
+      QUERY_TIMEOUT_MS: 10000
+      METRICS_QUERY_TIMEOUT_MS: 30000
+    ports:
+      - "127.0.0.1:${DATAMAP_HOST_PORT:-58974}:58973"
+    volumes:
+      - datamap_runtime_data:/app/.data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:58973/api/catalog/summary',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - datamap_internal
+
+volumes:
+  datamap_catalog_data:
+  datamap_runtime_data:
+
+networks:
+  datamap_internal:
+    driver: bridge

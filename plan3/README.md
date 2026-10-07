@@ -85,6 +85,12 @@ npm start
 
 执行 `007_encrypted_data_source_credentials.sql` 后，需要在设置页面重新输入并保存一次业务数据库密码。后续连接测试、心跳重连、数据预览和 `sync:catalog` 都从元数据仓库读取并在服务进程内解密。主密钥丢失后已有密文无法恢复；更换主密钥前必须先实现密钥轮换或重新保存密码。
 
+## Docker Compose 部署
+
+仓库提供 `Dockerfile` 与 `compose.yaml`，可用独立的应用容器和 PostgreSQL 17 元数据库容器部署。默认仅将应用发布到宿主机 `127.0.0.1:58974`，元数据库不发布宿主机端口，不会占用现有的 `5432`。
+
+完整部署、已有元数据库恢复和日常运维命令见 [`deploy/README.md`](deploy/README.md)。
+
 ## Excel 目录导入
 
 导入脚本需要 Python 3 和 `openpyxl`：
